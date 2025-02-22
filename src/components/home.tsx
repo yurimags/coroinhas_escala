@@ -1,14 +1,9 @@
 import React, { useState } from "react";
+import { Outlet } from "react-router-dom";
 import Sidebar from "./dashboard/Sidebar";
-import MainContent from "./dashboard/MainContent";
 
-interface HomeProps {
-  defaultTab?: string;
-}
-
-const Home: React.FC<HomeProps> = ({ defaultTab = "servers" }) => {
+const Home: React.FC = () => {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [activeTab, setActiveTab] = useState(defaultTab);
 
   return (
     <div className="flex h-screen bg-background">
@@ -23,11 +18,8 @@ const Home: React.FC<HomeProps> = ({ defaultTab = "servers" }) => {
         />
       </div>
 
-      <div className="flex-1 overflow-auto">
-        <MainContent
-          activeTab={activeTab}
-          onTabChange={(value) => setActiveTab(value)}
-        />
+      <div className="flex-1 overflow-auto p-6">
+        <Outlet />
       </div>
     </div>
   );
