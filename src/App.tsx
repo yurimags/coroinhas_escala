@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import ServersPage from './pages/servers';
 import { Sidebar } from './components/Sidebar';
+import { SchedulePage } from './components/schedule/SchedulePage';
 
 function App() {
   return (
@@ -11,7 +12,7 @@ function App() {
           <Routes>
             <Route path="/servers" element={<ServersPage />} />
             <Route path="/coroinhas" element={<ServersPage />} />
-            <Route path="/escalas" element={<div>Escalas</div>} />
+            <Route path="/escalas" element={<SchedulePage />} />
             <Route path="/historico" element={<div>Histórico</div>} />
             <Route path="/configuracoes" element={<div>Configurações</div>} />
           </Routes>

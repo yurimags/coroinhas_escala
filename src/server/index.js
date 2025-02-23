@@ -158,6 +158,113 @@ app.put('/api/coroinhas/:id', async (req, res) => {
     }
   }
 });
+// Adicione essas constantes no topo do arquivo do servidor
+const DIAS_SEMANA = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"];
+const DIAS_COMPLETOS = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado", "Domingo"];
+
+app.post('/api/escalas/gerar', async (req, res) => {
+  let connection;
+  try {
+    const { locais, dias, horarios, regras, numeroCoroinhas } = req.body;
+    connection = await pool.getConnection();
+    await connection.beginTransaction();
+
+    // Converter dias abreviados para completos (Seg -> Segunda)
+    const diasCompletos = dias.map(dia => DIAS_COMPLETOS[DIAS_SEMANA.indexOf(dia)]);
+
+    // Gerar todas combinações de local/dia/horário
+    const escalasGeradas = [];
+
+    for (const local of locais) {
+      for (const dia of diasCompletos) {
+        // Encontrar próxima data correspondente ao dia da semana
+        const data = getNextDateForDay(dia);
+
+        for (const horario of horarios) {
+          // 1. Buscar coroinhas disponíveis
+          const [coroinhas] = await connection.query(
+            `SELECT c.*, 
+              (SELECT COUNT(*) FROM Escalas e 
+               WHERE e.coroinha_id = c.id 
+               AND DATE(e.data) = ?) as escalas_hoje
+             FROM Coroinhas c
+             WHERE JSON_CONTAINS(c.disponibilidade_locais, ?) 
+             AND JSON_CONTAINS(c.disponibilidade_dias, ?)
+             HAVING escalas_hoje < ?
+             ORDER BY 
+               ${regras.prioridadeAcolitos ? 'c.acolito DESC, c.sub_acolito DESC,' : ''}
+               c.escala ASC
+             LIMIT ?`, // Limite de posições por escala
+            [data.toISOString().split('T')[0], 
+             JSON.stringify(local), 
+             JSON.stringify(dia),
+             regras.limiteDiario,
+             numeroCoroinhas] // Usar o número de coroinhas como limite
+          );
+
+          // 2. Criar registros de escala para os coroinhas selecionados
+          for (const coroinha of coroinhas) {
+            const [result] = await connection.query(
+              'INSERT INTO Escalas (data, horario, local, coroinha_id) VALUES (?, ?, ?, ?)',
+              [data, horario, local, coroinha.id]
+            );
+
+            // Atualizar contador de escalas do coroinha
+            await connection.query(
+              'UPDATE Coroinhas SET escala = escala + 1 WHERE id = ?',
+              [coroinha.id]
+            );
+
+            escalasGeradas.push({
+              id: result.insertId,
+              data,
+              horario,
+              local,
+              coroinha_id: coroinha.id
+            });
+          }
+        }
+      }
+    }
+
+    await connection.commit();
+
+    res.json({
+      success: true,
+      count: escalasGeradas.length,
+      message: `${escalasGeradas.length} escalas geradas com sucesso`,
+      data: escalasGeradas
+    });
+
+  } catch (error) {
+    await connection.rollback();
+    console.error('Erro ao gerar escalas:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Erro ao gerar escalas',
+      details: error.message
+    });
+  } finally {
+    if (connection) connection.release();
+  }
+});
+
+// Função auxiliar para obter próxima data para um dia da semana
+function getNextDateForDay(dia) {
+  const dias = {
+    'Segunda': 1,
+    'Terça': 2,
+    'Quarta': 3,
+    'Quinta': 4,
+    'Sexta': 5,
+    'Sábado': 6,
+    'Domingo': 0
+  };
+  
+  const date = new Date();
+  date.setDate(date.getDate() + ((dias[dia] - date.getDay() + 7) % 7));
+  return date;
+}
 
 // Rota para deletar um coroinha
 app.delete('/api/coroinhas/:id', async (req, res) => {
@@ -270,13 +377,30 @@ app.post('/api/coroinhas/import', upload.single('file'), async (req, res) => {
       );
     }
 
-    await connection.commit();
+    const todosLocais = coroinhas.flatMap(c => {
+      try {
+        return JSON.parse(c.disponibilidade_locais);
+      } catch (e) {
+        return [];
+      }
+    });
+    const locaisUnicos = [...new Set(todosLocais)];
+
+    // ETAPA NOVA: Inserir locais na tabela Locais
+    if (locaisUnicos.length > 0) {
+      await connection.query(
+        'INSERT IGNORE INTO locais (nome) VALUES ?',
+        [locaisUnicos.map(nome => [nome])]
+      );
+    }  
     
     res.json({ 
       success: true,
       message: 'Dados importados com sucesso!',
       count: coroinhas.length 
     });
+
+    await connection.commit();
 
   } catch (error) {
     console.error('Erro durante a importação:', error);
@@ -447,6 +571,40 @@ app.get('/api/escalas', async (req, res) => {
   }
 });
 
+// Rota para buscar locais
+app.get('/api/locais', async (req, res) => {
+  try {
+    const connection = await pool.getConnection();
+    const [rows] = await connection.query('SELECT DISTINCT local FROM Escalas');
+    connection.release();
+    
+    const locais = rows.map(row => row.local);
+    res.json(locais);
+  } catch (error) {
+    res.status(500).json({ error: 'Erro ao buscar locais' });
+  }
+});
+
+// Rota para buscar coroinhas disponíveis
+app.get('/api/coroinhas', async (req, res) => {
+  try {
+    const { local } = req.query;
+    const connection = await pool.getConnection();
+    
+    const [rows] = await connection.query(
+      `SELECT c.* 
+       FROM Coroinhas c
+       WHERE JSON_CONTAINS(c.disponibilidade_locais, ?)`,
+      [`"${local}"`]
+    );
+    
+    connection.release();
+    res.json(rows);
+  } catch (error) {
+    res.status(500).json({ error: 'Erro ao buscar coroinhas' });
+  }
+});
+
 // Rota para editar escala manualmente
 app.put('/api/escalas/:id', async (req, res) => {
   let connection;
@@ -454,21 +612,30 @@ app.put('/api/escalas/:id', async (req, res) => {
     const { id } = req.params;
     const { coroinha_id, data, horario, local } = req.body;
     
+    // Validar dados
+    if (!coroinha_id || !data || !horario || !local) {
+      throw new Error('Todos os campos são obrigatórios');
+    }
+
+    // Converter data para formato MySQL
+    const mysqlDate = new Date(data).toISOString().slice(0, 19).replace('T', ' ');
+
     connection = await pool.getConnection();
     
     // Verificar se não viola o limite de 2 escalas por dia
     const [escalasNoDia] = await connection.query(
       'SELECT COUNT(*) as count FROM Escalas WHERE coroinha_id = ? AND DATE(data) = ? AND id != ?',
-      [coroinha_id, data, id]
+      [coroinha_id, mysqlDate.split(' ')[0], id] // Usar apenas a parte da data (YYYY-MM-DD)
     );
 
     if (escalasNoDia[0].count >= 2) {
       throw new Error('Coroinha já possui 2 escalas neste dia');
     }
 
+    // Atualizar escala
     await connection.query(
       'UPDATE Escalas SET coroinha_id = ?, data = ?, horario = ?, local = ? WHERE id = ?',
-      [coroinha_id, data, horario, local, id]
+      [coroinha_id, mysqlDate, horario, local, id]
     );
 
     res.json({
@@ -581,6 +748,49 @@ app.get('/api/opcoes', async (req, res) => {
 
       res.json({
         diasSemana,
+        locais
+      });
+
+    } finally {
+      if (connection) connection.release();
+    }
+
+  } catch (error) {
+    console.error('Erro ao buscar opções:', error);
+    res.status(500).json({
+      error: 'Erro ao buscar opções',
+      details: error.message
+    });
+  }
+});
+
+app.get('/api/locais', async (req, res) => {
+  try {
+    let connection;
+    try {
+      // Buscar locais únicos do banco de dados
+      connection = await pool.getConnection();
+      const [rows] = await connection.query(`
+        SELECT DISTINCT 
+          JSON_UNQUOTE(JSON_EXTRACT(disponibilidade_locais, '$[*]')) as local
+        FROM Coroinhas
+        WHERE disponibilidade_locais IS NOT NULL
+          AND disponibilidade_locais != '[]'
+      `);
+      
+      // Extrair e normalizar os locais únicos
+      const locaisSet = new Set();
+      rows.forEach(row => {
+        const locais = row.local.split(',').map(l => l.trim().replace(/["\[\]]/g, ''));
+        locais.forEach(l => locaisSet.add(l));
+      });
+
+      // Se não houver locais no banco, usar locais padrão
+      const locais = locaisSet.size > 0 
+        ? Array.from(locaisSet).sort()
+        : ['Paróquia', 'Rainha Da Paz', 'Cristo Rei', 'Bom Pastor'];
+
+      res.json({
         locais
       });
 
