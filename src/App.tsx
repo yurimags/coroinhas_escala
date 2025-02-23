@@ -1,5 +1,5 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
-import ServersPage from './routes/servers';
+import ServersPage from './pages/servers';
 import { Sidebar } from './components/Sidebar';
 
 function App() {
@@ -9,7 +9,7 @@ function App() {
         <Sidebar />
         <main className="flex-1 p-4 overflow-auto">
           <Routes>
-            <Route path="/" element={<ServersPage />} />
+            <Route path="/servers" element={<ServersPage />} />
             <Route path="/coroinhas" element={<ServersPage />} />
             <Route path="/escalas" element={<div>Escalas</div>} />
             <Route path="/historico" element={<div>Histórico</div>} />

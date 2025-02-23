@@ -5,6 +5,7 @@ import { useButtonState } from '@/hooks/useButtonState';
 import { useToast } from "@/components/ui/use-toast";
 import { Button } from '@/components/ui/button';
 import { ServerManagement } from '@/components/servers/ServerManagement';
+import ServersPage from '@/pages/servers';
 
 interface Coroinha {
   id: number;

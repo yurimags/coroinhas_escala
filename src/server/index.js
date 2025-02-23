@@ -2,6 +2,8 @@ import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import mysql from 'mysql2/promise';
+import multer from 'multer';
+import xlsx from 'xlsx';
 
 const app = express();
 
@@ -33,6 +35,8 @@ const pool = mysql.createPool({
   connectionLimit: 10,
   queueLimit: 0
 });
+
+const upload = multer({ storage: multer.memoryStorage() });
 
 // Rota de teste
 app.get('/api/test', (req, res) => {
@@ -209,39 +213,71 @@ app.post('/api/coroinhas/:id/reset-escala', async (req, res) => {
 });
 
 // Rota para importar coroinhas
-app.post('/api/coroinhas/import', async (req, res) => {
+app.post('/api/coroinhas/import', upload.single('file'), async (req, res) => {
   let connection;
   try {
-    connection = await pool.getConnection();
-    console.log('Iniciando importação...');
-    const coroinhas = req.body;
-    console.log(`Recebidos ${coroinhas.length} registros para importação`);
+    if (!req.file) {
+      throw new Error('Nenhum arquivo foi enviado');
+    }
+
+    // Lê o arquivo XLSX
+    const workbook = xlsx.read(req.file.buffer, { type: 'buffer' });
+    const sheetName = workbook.SheetNames[0];
+    const worksheet = workbook.Sheets[sheetName];
     
+    // Converte para JSON
+    const rawData = xlsx.utils.sheet_to_json(worksheet);
+    
+    const coroinhas = rawData.map(row => {
+      // Array para armazenar os dias disponíveis
+      const dias = [];
+      if (row['Segunda']) dias.push('Segunda');
+      if (row['Terça']) dias.push('Terça');
+      if (row['Quarta']) dias.push('Quarta');
+      if (row['Quinta']) dias.push('Quinta');
+      if (row['Sexta']) dias.push('Sexta');
+      if (row['Sábado']) dias.push('Sábado');
+      if (row['Domingo']) dias.push('Domingo');
+
+      // Array para armazenar os locais disponíveis
+      const locais = [];
+      if (row['Paróquia']) locais.push('Paróquia');
+      if (row['RainhaDaPaz']) locais.push('RainhaDaPaz');
+      if (row['CristoRei']) locais.push('CristoRei');
+      if (row['BomPastor']) locais.push('BomPastor');
+
+      return {
+        nome: row['Nome'] || '',
+        acolito: row['Acólito'] === 'Sim' ? 1 : 0,
+        sub_acolito: row['Sub-Acólito'] === 'Sim' ? 1 : 0,
+        disponibilidade_dias: JSON.stringify(dias),
+        disponibilidade_locais: JSON.stringify(locais),
+        escala: 0
+      };
+    }).filter(coroinha => coroinha.nome.trim() !== ''); // Remove linhas vazias
+
+    connection = await pool.getConnection();
     await connection.beginTransaction();
-    console.log('Transação iniciada');
 
     // Limpa a tabela atual
     await connection.query('DELETE FROM Coroinhas');
-    console.log('Tabela limpa');
     
     // Insere os novos dados
     for (const coroinha of coroinhas) {
-      console.log(`Inserindo coroinha: ${coroinha.nome}`);
       await connection.query(
         'INSERT INTO Coroinhas (nome, acolito, sub_acolito, disponibilidade_dias, disponibilidade_locais, escala) VALUES (?, ?, ?, ?, ?, ?)',
         [
           coroinha.nome,
-          coroinha.acolito ? 1 : 0,
-          coroinha.sub_acolito ? 1 : 0,
+          coroinha.acolito,
+          coroinha.sub_acolito,
           coroinha.disponibilidade_dias,
           coroinha.disponibilidade_locais,
-          0
+          coroinha.escala
         ]
       );
     }
 
     await connection.commit();
-    console.log('Transação commitada com sucesso');
     
     res.json({ 
       success: true,
