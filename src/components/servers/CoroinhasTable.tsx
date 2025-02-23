@@ -8,7 +8,7 @@ import {
   flexRender,
   type SortingState,
 } from '@tanstack/react-table';
-import { ArrowUpDown, Edit2, Trash2, Plus, Upload } from 'lucide-react';
+import { ArrowUpDown, Edit2, Trash2, Plus, Upload, Download } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import { ServerManagement } from './ServerManagement';
 import { useToast } from "@/components/ui/use-toast";
@@ -274,11 +274,96 @@ export function CoroinhasTable({ coroinhas, onUpdate }: CoroinhasTableProps) {
     }
   };
 
+  // Adicione esta nova função após as outras funções de manipulação
+  const handleDeleteAll = async () => {
+    if (confirm('Tem certeza que deseja excluir TODOS os coroinhas? Esta ação não pode ser desfeita.')) {
+      try {
+        const response = await fetch('/api/coroinhas', {
+          method: 'DELETE',
+        });
+
+        if (response.ok) {
+          toast({
+            title: "Sucesso",
+            description: "Todos os coroinhas foram excluídos com sucesso",
+          });
+          onUpdate();
+        } else {
+          const errorData = await response.json();
+          throw new Error(errorData.details || 'Erro ao excluir todos os coroinhas');
+        }
+      } catch (error) {
+        toast({
+          title: "Erro",
+          description: error instanceof Error ? error.message : "Erro ao excluir todos os coroinhas",
+          variant: "destructive",
+        });
+      }
+    }
+  };
+
+  // Adicione a função handleExportXLSX após as outras funções de manipulação
+  const handleExportXLSX = async () => {
+    try {
+      const response = await fetch('/api/coroinhas/export', {
+        method: 'GET',
+      });
+
+      if (!response.ok) {
+        throw new Error('Erro ao exportar dados');
+      }
+
+      // Criar um blob a partir da resposta
+      const blob = await response.blob();
+      
+      // Criar URL do blob
+      const url = window.URL.createObjectURL(blob);
+      
+      // Criar link temporário e clicar nele
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'coroinhas.xlsx';
+      document.body.appendChild(a);
+      a.click();
+      
+      // Limpar
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+
+      toast({
+        title: "Sucesso",
+        description: "Dados exportados com sucesso",
+      });
+    } catch (error) {
+      toast({
+        title: "Erro",
+        description: "Erro ao exportar os dados",
+        variant: "destructive",
+      });
+    }
+  };
+
   return (
     <div className="container mx-auto p-4">
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold">Coroinhas</h1>
         <div className="flex gap-3">
+          <Button
+            onClick={handleDeleteAll}
+            className="flex items-center gap-2 bg-red-600 text-white hover:bg-red-700"
+            variant="default"
+          >
+            <Trash2 className="h-4 w-4" />
+            Excluir Todos
+          </Button>
+          <Button
+            onClick={handleExportXLSX}
+            className="flex items-center gap-2 bg-purple-600 text-white hover:bg-purple-700"
+            variant="default"
+          >
+            <Download className="h-4 w-4" />
+            Exportar XLSX
+          </Button>
           <Button
             onClick={handleImportXLSX}
             className="flex items-center gap-2 bg-green-600 text-white hover:bg-green-700"

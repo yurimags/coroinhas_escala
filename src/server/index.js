@@ -114,22 +114,19 @@ app.put('/api/coroinhas/:id', async (req, res) => {
     const { id } = req.params;
     const { nome, acolito, sub_acolito, disponibilidade_dias, disponibilidade_locais } = req.body;
 
-    console.log('Dados recebidos para atualização:', {
-      id,
-      nome,
-      acolito,
-      sub_acolito,
-      disponibilidade_dias,
-      disponibilidade_locais
+    // Normalizar os nomes dos locais se necessário
+    const locaisNormalizados = disponibilidade_locais.map(local => {
+      switch(local) {
+        case 'Igreja Matriz': return 'Paróquia';
+        case 'Capela Rainha da Paz': return 'Rainha DaPaz';
+        case 'Capela Cristo Rei': return 'CristoR ei';
+        case 'Capela Bom Pastor': return 'Bom Pastor';
+        default: return local;
+      }
     });
 
     const diasJson = JSON.stringify(disponibilidade_dias || []);
-    const locaisJson = JSON.stringify(disponibilidade_locais || []);
-
-    console.log('Dados formatados para o banco:', {
-      diasJson,
-      locaisJson
-    });
+    const locaisJson = JSON.stringify(locaisNormalizados || []);
 
     const [result] = await connection.query(
       'UPDATE Coroinhas SET nome = ?, acolito = ?, sub_acolito = ?, disponibilidade_dias = ?, disponibilidade_locais = ? WHERE id = ?',
@@ -220,41 +217,37 @@ app.post('/api/coroinhas/import', upload.single('file'), async (req, res) => {
       throw new Error('Nenhum arquivo foi enviado');
     }
 
-    // Lê o arquivo XLSX
     const workbook = xlsx.read(req.file.buffer, { type: 'buffer' });
     const sheetName = workbook.SheetNames[0];
     const worksheet = workbook.Sheets[sheetName];
     
-    // Converte para JSON
     const rawData = xlsx.utils.sheet_to_json(worksheet);
     
     const coroinhas = rawData.map(row => {
-      // Array para armazenar os dias disponíveis
       const dias = [];
-      if (row['Segunda']) dias.push('Segunda');
-      if (row['Terça']) dias.push('Terça');
-      if (row['Quarta']) dias.push('Quarta');
-      if (row['Quinta']) dias.push('Quinta');
-      if (row['Sexta']) dias.push('Sexta');
-      if (row['Sábado']) dias.push('Sábado');
-      if (row['Domingo']) dias.push('Domingo');
+      if (row['Segunda'] === 'Sim' || row['Segunda'] === true) dias.push('Segunda');
+      if (row['Terça'] === 'Sim' || row['Terça'] === true) dias.push('Terça');
+      if (row['Quarta'] === 'Sim' || row['Quarta'] === true) dias.push('Quarta');
+      if (row['Quinta'] === 'Sim' || row['Quinta'] === true) dias.push('Quinta');
+      if (row['Sexta'] === 'Sim' || row['Sexta'] === true) dias.push('Sexta');
+      if (row['Sábado'] === 'Sim' || row['Sábado'] === true) dias.push('Sábado');
+      if (row['Domingo'] === 'Sim' || row['Domingo'] === true) dias.push('Domingo');
 
-      // Array para armazenar os locais disponíveis
       const locais = [];
-      if (row['Paróquia']) locais.push('Paróquia');
-      if (row['RainhaDaPaz']) locais.push('RainhaDaPaz');
-      if (row['CristoRei']) locais.push('CristoRei');
-      if (row['BomPastor']) locais.push('BomPastor');
+      if (row['Paróquia'] === 'Sim' || row['Paróquia'] === true) locais.push('Paróquia');
+      if (row['Rainha da Paz'] === 'Sim' || row['RainhaDaPaz'] === true) locais.push('Rainha Da Paz');
+      if (row['Cristo Rei'] === 'Sim' || row['CristoRei'] === true) locais.push('Cristo Rei');
+      if (row['Bom Pastor'] === 'Sim' || row['BomPastor'] === true) locais.push('Bom Pastor');
 
       return {
         nome: row['Nome'] || '',
-        acolito: row['Acólito'] === 'Sim' ? 1 : 0,
-        sub_acolito: row['Sub-Acólito'] === 'Sim' ? 1 : 0,
+        acolito: row['Acólito'] === 'Sim' || row['Acólito'] === true ? 1 : 0,
+        sub_acolito: row['Sub-Acólito'] === 'Sim' || row['Sub-Acólito'] === true ? 1 : 0,
         disponibilidade_dias: JSON.stringify(dias),
         disponibilidade_locais: JSON.stringify(locais),
         escala: 0
       };
-    }).filter(coroinha => coroinha.nome.trim() !== ''); // Remove linhas vazias
+    }).filter(coroinha => coroinha.nome.trim() !== '');
 
     connection = await pool.getConnection();
     await connection.beginTransaction();
@@ -331,6 +324,358 @@ app.post('/api/coroinhas', async (req, res) => {
     if (connection) {
       connection.release();
     }
+  }
+});
+
+// Rota para gerar escala automática
+app.post('/api/escalas/gerar', async (req, res) => {
+  let connection;
+  try {
+    const { data, local } = req.body;
+    connection = await pool.getConnection();
+
+    // 1. Buscar coroinhas disponíveis para o dia e local
+    const [coroinhas] = await connection.query(
+      `SELECT c.*, 
+        (SELECT COUNT(*) FROM Escalas e WHERE e.coroinha_id = c.id AND DATE(e.data) = ?) as escalas_no_dia
+       FROM Coroinhas c
+       WHERE JSON_CONTAINS(c.disponibilidade_locais, ?)
+       AND JSON_CONTAINS(c.disponibilidade_dias, ?)
+       HAVING escalas_no_dia < 2
+       ORDER BY c.escala ASC, c.sub_acolito DESC, c.acolito DESC`,
+      [data, `"${local}"`, `"${getDiaSemana(new Date(data))}"`]
+    );
+
+    if (coroinhas.length === 0) {
+      throw new Error('Não há coroinhas disponíveis para esta data e local');
+    }
+
+    // 2. Criar a escala
+    const [result] = await connection.query(
+      'INSERT INTO Escalas (data, horario, local, coroinha_id) VALUES (?, ?, ?, ?)',
+      [data, req.body.horario, local, coroinhas[0].id]
+    );
+
+    // 3. Atualizar contador de escalas do coroinha
+    await connection.query(
+      'UPDATE Coroinhas SET escala = escala + 1 WHERE id = ?',
+      [coroinhas[0].id]
+    );
+
+    res.json({
+      success: true,
+      message: 'Escala gerada com sucesso',
+      escala: {
+        id: result.insertId,
+        data,
+        horario: req.body.horario,
+        local,
+        coroinha: coroinhas[0]
+      }
+    });
+
+  } catch (error) {
+    console.error('Erro ao gerar escala:', error);
+    res.status(500).json({
+      error: 'Erro ao gerar escala',
+      details: error.message
+    });
+  } finally {
+    if (connection) connection.release();
+  }
+});
+
+app.get('/api/locais-disponiveis', async (req, res) => {
+  let connection;
+  try {
+    connection = await pool.getConnection();
+    const [rows] = await connection.query(`
+      SELECT DISTINCT 
+        JSON_UNQUOTE(JSON_EXTRACT(disponibilidade_locais, '$[*]')) as local
+      FROM Coroinhas
+      WHERE disponibilidade_locais IS NOT NULL
+        AND disponibilidade_locais != '[]'
+    `);
+    
+    // Extrair os locais únicos do resultado
+    const locaisSet = new Set();
+    rows.forEach(row => {
+      const locais = row.local.split(',').map(l => l.trim().replace(/["\[\]]/g, ''));
+      locais.forEach(l => locaisSet.add(l));
+    });
+    
+    const locais = Array.from(locaisSet).sort();
+    console.log('Locais disponíveis:', locais); // Debug
+    
+    res.json(locais);
+  } catch (error) {
+    console.error('Erro ao buscar locais:', error);
+    res.status(500).json({ error: 'Erro ao buscar locais disponíveis' });
+  } finally {
+    if (connection) connection.release();
+  }
+});
+
+// Função auxiliar para obter o dia da semana
+function getDiaSemana(date) {
+  const dias = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
+  return dias[date.getDay()];
+}
+
+// Rota para listar escalas
+app.get('/api/escalas', async (req, res) => {
+  let connection;
+  try {
+    connection = await pool.getConnection();
+    const [escalas] = await connection.query(
+      `SELECT e.*, c.nome as coroinha_nome 
+       FROM Escalas e 
+       LEFT JOIN Coroinhas c ON e.coroinha_id = c.id
+       ORDER BY e.data ASC, e.horario ASC`
+    );
+
+    res.json(escalas);
+
+  } catch (error) {
+    console.error('Erro ao listar escalas:', error);
+    res.status(500).json({
+      error: 'Erro ao listar escalas',
+      details: error.message
+    });
+  } finally {
+    if (connection) connection.release();
+  }
+});
+
+// Rota para editar escala manualmente
+app.put('/api/escalas/:id', async (req, res) => {
+  let connection;
+  try {
+    const { id } = req.params;
+    const { coroinha_id, data, horario, local } = req.body;
+    
+    connection = await pool.getConnection();
+    
+    // Verificar se não viola o limite de 2 escalas por dia
+    const [escalasNoDia] = await connection.query(
+      'SELECT COUNT(*) as count FROM Escalas WHERE coroinha_id = ? AND DATE(data) = ? AND id != ?',
+      [coroinha_id, data, id]
+    );
+
+    if (escalasNoDia[0].count >= 2) {
+      throw new Error('Coroinha já possui 2 escalas neste dia');
+    }
+
+    await connection.query(
+      'UPDATE Escalas SET coroinha_id = ?, data = ?, horario = ?, local = ? WHERE id = ?',
+      [coroinha_id, data, horario, local, id]
+    );
+
+    res.json({
+      success: true,
+      message: 'Escala atualizada com sucesso'
+    });
+
+  } catch (error) {
+    console.error('Erro ao atualizar escala:', error);
+    res.status(500).json({
+      error: 'Erro ao atualizar escala',
+      details: error.message
+    });
+  } finally {
+    if (connection) connection.release();
+  }
+});
+
+app.delete('/api/coroinhas', async (req, res) => {
+  let connection;
+  try {
+    connection = await pool.getConnection();
+    await connection.query('DELETE FROM Coroinhas');
+    return res.json({ success: true });
+  } catch (error) {
+    console.error('Erro ao deletar coroinhas:', error);
+    return res.status(500).json({ 
+      error: 'Erro ao deletar coroinhas',
+      details: error.message 
+    });
+  } finally {
+    if (connection) {
+      connection.release();
+    }
+  }
+});
+
+// Rota para exportar escalas
+app.get('/api/escalas/export', async (req, res) => {
+  let connection;
+  try {
+    connection = await pool.getConnection();
+    const [escalas] = await connection.query(
+      `SELECT e.data, e.horario, e.local, c.nome as coroinha_nome 
+       FROM Escalas e 
+       LEFT JOIN Coroinhas c ON e.coroinha_id = c.id
+       ORDER BY e.data ASC, e.horario ASC`
+    );
+
+    // Criar workbook Excel
+    const wb = xlsx.utils.book_new();
+    const ws = xlsx.utils.json_to_sheet(escalas);
+    xlsx.utils.book_append_sheet(wb, ws, 'Escalas');
+
+    // Gerar buffer
+    const buffer = xlsx.write(wb, { type: 'buffer', bookType: 'xlsx' });
+
+    // Enviar arquivo
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', 'attachment; filename=escalas.xlsx');
+    res.send(buffer);
+
+  } catch (error) {
+    console.error('Erro ao exportar escalas:', error);
+    res.status(500).json({
+      error: 'Erro ao exportar escalas',
+      details: error.message
+    });
+  } finally {
+    if (connection) connection.release();
+  }
+});
+
+// Rota para buscar opções de dias e locais
+app.get('/api/opcoes', async (req, res) => {
+  try {
+    const diasSemana = [
+      'Domingo',
+      'Segunda',
+      'Terça',
+      'Quarta',
+      'Quinta',
+      'Sexta',
+      'Sábado'
+    ];
+
+    let connection;
+    try {
+      // Buscar locais únicos do banco de dados
+      connection = await pool.getConnection();
+      const [rows] = await connection.query(`
+        SELECT DISTINCT 
+          JSON_UNQUOTE(JSON_EXTRACT(disponibilidade_locais, '$[*]')) as local
+        FROM Coroinhas
+        WHERE disponibilidade_locais IS NOT NULL
+          AND disponibilidade_locais != '[]'
+      `);
+      
+      // Extrair e normalizar os locais únicos
+      const locaisSet = new Set();
+      rows.forEach(row => {
+        const locais = row.local.split(',').map(l => l.trim().replace(/["\[\]]/g, ''));
+        locais.forEach(l => locaisSet.add(l));
+      });
+
+      // Se não houver locais no banco, usar locais padrão
+      const locais = locaisSet.size > 0 
+        ? Array.from(locaisSet).sort()
+        : ['Paróquia', 'Rainha Da Paz', 'Cristo Rei', 'Bom Pastor'];
+
+      res.json({
+        diasSemana,
+        locais
+      });
+
+    } finally {
+      if (connection) connection.release();
+    }
+
+  } catch (error) {
+    console.error('Erro ao buscar opções:', error);
+    res.status(500).json({
+      error: 'Erro ao buscar opções',
+      details: error.message
+    });
+  }
+});
+
+// Rota para exportar coroinhas
+app.get('/api/coroinhas/export', async (req, res) => {
+  let connection;
+  try {
+    connection = await pool.getConnection();
+    const [coroinhas] = await connection.query('SELECT * FROM Coroinhas');
+    
+    // Transformar os dados para o formato desejado
+    const formattedData = coroinhas.map(coroinha => {
+      let dias = [];
+      let locais = [];
+
+      // Tenta fazer o parse dos dias
+      try {
+        const diasStr = coroinha.disponibilidade_dias?.toString() || '[]';
+        dias = JSON.parse(diasStr);
+      } catch (e) {
+        // Se falhar o parse, tenta tratar como string separada por vírgula
+        dias = coroinha.disponibilidade_dias
+          ?.toString()
+          .replace(/[\[\]"]/g, '')
+          .split(',')
+          .map(d => d.trim())
+          .filter(Boolean) || [];
+      }
+
+      // Tenta fazer o parse dos locais
+      try {
+        const locaisStr = coroinha.disponibilidade_locais?.toString() || '[]';
+        locais = JSON.parse(locaisStr);
+      } catch (e) {
+        // Se falhar o parse, tenta tratar como string separada por vírgula
+        locais = coroinha.disponibilidade_locais
+          ?.toString()
+          .replace(/[\[\]"]/g, '')
+          .split(',')
+          .map(l => l.trim())
+          .filter(Boolean) || [];
+      }
+      
+      return {
+        Nome: coroinha.nome,
+        'Acólito': coroinha.acolito ? 'Sim' : 'Não',
+        'Sub-Acólito': coroinha.sub_acolito ? 'Sim' : 'Não',
+        'Segunda': dias.includes('Segunda') ? 'Sim' : 'Não',
+        'Terça': dias.includes('Terça') ? 'Sim' : 'Não',
+        'Quarta': dias.includes('Quarta') ? 'Sim' : 'Não',
+        'Quinta': dias.includes('Quinta') ? 'Sim' : 'Não',
+        'Sexta': dias.includes('Sexta') ? 'Sim' : 'Não',
+        'Sábado': dias.includes('Sábado') ? 'Sim' : 'Não',
+        'Domingo': dias.includes('Domingo') ? 'Sim' : 'Não',
+        'Paróquia': locais.includes('Paróquia') ? 'Sim' : 'Não',
+        'RainhaDaPaz': locais.includes('Rainha Da Paz') || locais.includes('RainhaDaPaz') ? 'Sim' : 'Não',
+        'CristoRei': locais.includes('Cristo Rei') || locais.includes('CristoRei') ? 'Sim' : 'Não',
+        'BomPastor': locais.includes('Bom Pastor') || locais.includes('BomPastor') ? 'Sim' : 'Não'
+      };
+    });
+
+    // Criar workbook Excel
+    const wb = xlsx.utils.book_new();
+    const ws = xlsx.utils.json_to_sheet(formattedData);
+    xlsx.utils.book_append_sheet(wb, ws, 'Coroinhas');
+
+    // Gerar buffer
+    const buffer = xlsx.write(wb, { type: 'buffer', bookType: 'xlsx' });
+
+    // Enviar arquivo
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', 'attachment; filename=coroinhas.xlsx');
+    res.send(buffer);
+
+  } catch (error) {
+    console.error('Erro ao exportar coroinhas:', error);
+    res.status(500).json({
+      error: 'Erro ao exportar coroinhas',
+      details: error.message
+    });
+  } finally {
+    if (connection) connection.release();
   }
 });
 

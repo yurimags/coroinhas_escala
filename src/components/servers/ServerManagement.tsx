@@ -27,7 +27,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Plus, Edit, Trash2, Search, Settings, PlusCircle, Pencil } from "lucide-react";
+import { Plus, Edit, Trash2, Search, Settings, PlusCircle, Pencil, DownloadIcon } from "lucide-react";
 import { ServerConfigDialog } from "./ServerConfigDialog";
 import { useButtonState } from '@/hooks/useButtonState'
 import { useToast } from "@/components/ui/use-toast";
@@ -152,6 +152,34 @@ export function ServerManagement({ mode, coroinha, onClose, onUpdate }: ServerMa
     disponibilidade_locais: mode === 'edit' ? coroinha?.disponibilidade_locais || [] : [],
   });
 
+  // Mova as opções para um arquivo de configuração ou busque da API
+  const [opcoes, setOpcoes] = useState({
+    diasSemana: [],
+    locais: []
+  });
+
+  // Busca as opções quando o componente é montado
+  useEffect(() => {
+    const buscarOpcoes = async () => {
+      try {
+        const response = await fetch('/api/opcoes');
+        const data = await response.json();
+        setOpcoes({
+          diasSemana: data.diasSemana,
+          locais: data.locais
+        });
+      } catch (error) {
+        toast({
+          title: "Erro",
+          description: "Não foi possível carregar as opções",
+          variant: "destructive",
+        });
+      }
+    };
+
+    buscarOpcoes();
+  }, []);
+
   // Adiciona um useEffect para atualizar o formData quando o coroinha mudar
   useEffect(() => {
     if (mode === 'edit' && coroinha) {
@@ -164,23 +192,6 @@ export function ServerManagement({ mode, coroinha, onClose, onUpdate }: ServerMa
       });
     }
   }, [mode, coroinha]);
-
-  const diasSemana = [
-    'Domingo',
-    'Segunda',
-    'Terça',
-    'Quarta',
-    'Quinta',
-    'Sexta',
-    'Sábado'
-  ];
-
-  const locais = [
-    'Igreja Matriz',
-    'Capela Rainha da Paz',
-    'Capela Cristo Rei',
-    'Capela Bom Pastor'
-  ];
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -227,105 +238,149 @@ export function ServerManagement({ mode, coroinha, onClose, onUpdate }: ServerMa
     }
   };
 
+  const handleExport = async () => {
+    try {
+      const response = await fetch('/api/coroinhas/export');
+      if (!response.ok) throw new Error('Erro ao exportar dados');
+      
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'coroinhas.xlsx';
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      
+      toast({
+        title: "Sucesso",
+        description: "Dados exportados com sucesso",
+      });
+    } catch (error) {
+      toast({
+        title: "Erro",
+        description: "Erro ao exportar dados",
+        variant: "destructive",
+      });
+    }
+  };
+
   return (
-    <Dialog open onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-[600px]">
-        <DialogHeader>
-          <DialogTitle>
-            {mode === 'add' ? 'Adicionar Novo Coroinha' : 'Editar Coroinha'}
-          </DialogTitle>
-          <DialogDescription>
-            Preencha todos os campos necessários
-          </DialogDescription>
-        </DialogHeader>
+    <div className="space-y-4">
+      <div className="flex justify-between items-center">
+        <h2 className="text-lg font-semibold">Gerenciar Coroinhas</h2>
+        <Button onClick={handleExport} variant="outline" size="sm">
+          <DownloadIcon className="w-4 h-4 mr-2" />
+          Exportar Excel
+        </Button>
+      </div>
+      
+      <Dialog open onOpenChange={onClose}>
+        <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="text-xl font-semibold">
+              {mode === 'add' ? 'Adicionar Novo Coroinha' : 'Editar Coroinha'}
+            </DialogTitle>
+            <DialogDescription className="text-gray-500">
+              Preencha os dados do coroinha abaixo
+            </DialogDescription>
+          </DialogHeader>
 
-        <form onSubmit={handleSubmit} className="space-y-6">
-          <div>
-            <label className="text-sm font-medium">Nome</label>
-            <Input
-              value={formData.nome}
-              onChange={(e) => setFormData({ ...formData, nome: e.target.value })}
-              placeholder="Nome do coroinha"
-              required
-            />
-          </div>
+          <form onSubmit={handleSubmit} className="space-y-6">
+            <div className="grid gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="nome" className="text-sm font-medium">Nome</Label>
+                <Input
+                  id="nome"
+                  value={formData.nome}
+                  onChange={(e) => setFormData({ ...formData, nome: e.target.value })}
+                  className="w-full"
+                  placeholder="Digite o nome do coroinha"
+                />
+              </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div className="flex items-center space-x-2">
-              <Checkbox
-                id="acolito"
-                checked={formData.acolito}
-                onCheckedChange={(checked) => 
-                  setFormData({ ...formData, acolito: checked as boolean })
-                }
-              />
-              <label htmlFor="acolito">Acólito</label>
-            </div>
-            <div className="flex items-center space-x-2">
-              <Checkbox
-                id="sub_acolito"
-                checked={formData.sub_acolito}
-                onCheckedChange={(checked) => 
-                  setFormData({ ...formData, sub_acolito: checked as boolean })
-                }
-              />
-              <label htmlFor="sub_acolito">Sub-Acólito</label>
-            </div>
-          </div>
-
-          <div>
-            <label className="text-sm font-medium">Disponibilidade - Dias</label>
-            <div className="grid grid-cols-2 gap-2 mt-2">
-              {diasSemana.map((dia) => (
-                <div key={dia} className="flex items-center space-x-2">
-                  <Checkbox
-                    id={`dia-${dia}`}
-                    checked={formData.disponibilidade_dias.includes(dia)}
-                    onCheckedChange={(checked) => {
-                      const dias = checked
-                        ? [...formData.disponibilidade_dias, dia]
-                        : formData.disponibilidade_dias.filter(d => d !== dia);
-                      setFormData({ ...formData, disponibilidade_dias: dias });
-                    }}
-                  />
-                  <label htmlFor={`dia-${dia}`}>{dia}</label>
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Função</Label>
+                <div className="flex gap-6">
+                  <div className="flex items-center space-x-2">
+                    <Checkbox
+                      id="acolito"
+                      checked={formData.acolito}
+                      onCheckedChange={(checked) => 
+                        setFormData({ ...formData, acolito: checked as boolean })
+                      }
+                    />
+                    <Label htmlFor="acolito" className="text-sm">Acólito</Label>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <Checkbox
+                      id="sub_acolito"
+                      checked={formData.sub_acolito}
+                      onCheckedChange={(checked) => 
+                        setFormData({ ...formData, sub_acolito: checked as boolean })
+                      }
+                    />
+                    <Label htmlFor="sub_acolito" className="text-sm">Sub-Acólito</Label>
+                  </div>
                 </div>
-              ))}
-            </div>
-          </div>
+              </div>
 
-          <div>
-            <label className="text-sm font-medium">Disponibilidade - Locais</label>
-            <div className="grid grid-cols-2 gap-2 mt-2">
-              {locais.map((local) => (
-                <div key={local} className="flex items-center space-x-2">
-                  <Checkbox
-                    id={`local-${local}`}
-                    checked={formData.disponibilidade_locais.includes(local)}
-                    onCheckedChange={(checked) => {
-                      const locaisAtualizados = checked
-                        ? [...formData.disponibilidade_locais, local]
-                        : formData.disponibilidade_locais.filter(l => l !== local);
-                      setFormData({ ...formData, disponibilidade_locais: locaisAtualizados });
-                    }}
-                  />
-                  <label htmlFor={`local-${local}`}>{local}</label>
+              <div>
+                <label className="text-sm font-medium">Disponibilidade - Dias</label>
+                <div className="grid grid-cols-2 gap-2 mt-2">
+                  {opcoes.diasSemana.map((dia) => (
+                    <div key={dia} className="flex items-center space-x-2">
+                      <Checkbox
+                        id={`dia-${dia}`}
+                        checked={formData.disponibilidade_dias.includes(dia)}
+                        onCheckedChange={(checked) => {
+                          const dias = checked
+                            ? [...formData.disponibilidade_dias, dia]
+                            : formData.disponibilidade_dias.filter(d => d !== dia);
+                          setFormData({ ...formData, disponibilidade_dias: dias });
+                        }}
+                      />
+                      <label htmlFor={`dia-${dia}`}>{dia}</label>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
-          </div>
+              </div>
 
-          <div className="flex justify-end space-x-2">
-            <Button type="button" variant="outline" onClick={onClose}>
-              Cancelar
-            </Button>
-            <Button type="submit">
-              {mode === 'add' ? 'Adicionar' : 'Salvar'}
-            </Button>
-          </div>
-        </form>
-      </DialogContent>
-    </Dialog>
+              <div>
+                <label className="text-sm font-medium">Disponibilidade - Locais</label>
+                <div className="grid grid-cols-2 gap-2 mt-2">
+                  {opcoes.locais.map((local) => (
+                    <div key={local} className="flex items-center space-x-2">
+                      <Checkbox
+                        id={`local-${local}`}
+                        checked={formData.disponibilidade_locais.includes(local)}
+                        onCheckedChange={(checked) => {
+                          const locaisAtualizados = checked
+                            ? [...formData.disponibilidade_locais, local]
+                            : formData.disponibilidade_locais.filter(l => l !== local);
+                          setFormData({ ...formData, disponibilidade_locais: locaisAtualizados });
+                        }}
+                      />
+                      <label htmlFor={`local-${local}`}>{local}</label>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-end space-x-2 pt-4 border-t">
+              <Button type="button" variant="outline" onClick={onClose}>
+                Cancelar
+              </Button>
+              <Button type="submit" className="bg-primary">
+                {mode === 'add' ? 'Adicionar' : 'Salvar'}
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+    </div>
   );
 }
 
