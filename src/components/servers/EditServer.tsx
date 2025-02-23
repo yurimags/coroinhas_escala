@@ -21,7 +21,7 @@ interface EditServerProps {
 }
 
 const DIAS = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo'];
-const LOCAIS = ['Igreja Matriz', 'Capela Rainha da Paz', 'Capela Cristo Rei', 'Capela Bom Pastor'];
+const LOCAIS = ['Matriz', 'Rainha da Paz', 'Cristo Rei', 'Bom Pastor'];
 
 export function EditServer({ isOpen, onClose, onSave, coroinha }: EditServerProps) {
   const [loading, setLoading] = useState(false);

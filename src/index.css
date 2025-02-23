@@ -74,3 +74,18 @@
       @apply bg-background text-foreground;
     }
   }
+
+.card-container {
+  margin: 24px;
+  background: #fff;
+  border-radius: 8px;
+}
+
+.ant-table {
+  background: #fff;
+}
+
+.ant-card-head-title {
+  font-size: 18px;
+  font-weight: 500;
+}

@@ -40,10 +40,10 @@ export function ImportExcel({ isOpen, onClose, onImport }: ImportExcelProps) {
         row.Domingo && 'Domingo'
       ].filter(Boolean)),
       disponibilidade_locais: JSON.stringify([
-        row.Paróquia && 'Igreja Matriz',
-        row.RainhaDaPaz && 'Capela Rainha da Paz',
-        row.CristoRei && 'Capela Cristo Rei',
-        row.BomPastor && 'Capela Bom Pastor'
+        row.Paróquia && 'Matriz',
+        row.RainhaDaPaz && 'Rainha da Paz',
+        row.CristoRei && 'Cristo Rei',
+        row.BomPastor && 'Bom Pastor'
       ].filter(Boolean))
     }));
 

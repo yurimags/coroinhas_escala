@@ -47,8 +47,8 @@ export const CreateScheduleDialog = () => {
                 <SelectValue placeholder="Selecione o local" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="igreja-matriz">Igreja Matriz</SelectItem>
-                <SelectItem value="capela">Capela</SelectItem>
+                <SelectItem value="matriz">Matriz</SelectItem>
+                <SelectItem value="comunidade">Comunidade</SelectItem>
               </SelectContent>
             </Select>
           </div>
