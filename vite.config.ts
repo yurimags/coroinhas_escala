@@ -16,18 +16,18 @@ export default defineConfig({
     },
   },
   server: {
-    host: true,
+    host: "0.0.0.0", // Allow connections from all hosts
     port: 3000,
     hmr: {
-      host: 'localhost',
-      protocol: 'ws'
+      host: "strange-clarke3-pun84.dev-2.tempolabs.ai", // Allow HMR connections from this host
+      protocol: "ws",
     },
     proxy: {
-      '/api': {
-        target: 'http://localhost:3001',
+      "/api": {
+        target: "http://localhost:3001",
         changeOrigin: true,
         secure: false,
-      }
-    }
-  }
+      },
+    },
+  },
 });
