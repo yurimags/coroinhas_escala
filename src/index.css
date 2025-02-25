@@ -89,3 +89,16 @@
   font-size: 18px;
   font-weight: 500;
 }
+
+.sticky-column {
+  position: sticky;
+  background: inherit;
+  z-index: 10;
+}
+
+.sticky-header {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: white;
+}

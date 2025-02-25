@@ -3,17 +3,21 @@ import {
   useReactTable,
   getCoreRowModel,
   getSortedRowModel,
-  getFilteredRowModel,
   createColumnHelper,
   flexRender,
   type SortingState,
 } from '@tanstack/react-table';
-import { ArrowUpDown, Edit2, Trash2, Plus, Upload, Download } from 'lucide-react';
+import { ArrowUpDown, Edit2, Trash2, Plus, Upload, Download, Settings2 } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import { ServerManagement } from './ServerManagement';
 import { useToast } from "@/components/ui/use-toast";
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
-// Tipos básicos
 interface Coroinha {
   id: number;
   nome: string;
@@ -29,8 +33,37 @@ interface CoroinhasTableProps {
   onUpdate: () => void;
 }
 
-// Atualize todas as URLs para a porta correta do seu backend
-const API_BASE_URL = 'http://localhost:5000'; // ou a porta correta do seu backend
+const API_BASE_URL = 'http://localhost:5000';
+
+const ColumnVisibilityControl = ({
+  columns,
+  visibleColumns,
+  onVisibilityChange,
+}: {
+  columns: string[];
+  visibleColumns: string[];
+  onVisibilityChange: (column: string) => void;
+}) => (
+  <DropdownMenu>
+    <DropdownMenuTrigger asChild>
+      <Button variant="outline" size="sm" className="ml-2">
+        <Settings2 className="mr-2 h-4 w-4" />
+        Colunas
+      </Button>
+    </DropdownMenuTrigger>
+    <DropdownMenuContent align="end">
+      {columns.map((column) => (
+        <DropdownMenuCheckboxItem
+          key={column}
+          checked={visibleColumns.includes(column)}
+          onCheckedChange={() => onVisibilityChange(column)}
+        >
+          {column}
+        </DropdownMenuCheckboxItem>
+      ))}
+    </DropdownMenuContent>
+  </DropdownMenu>
+);
 
 export function CoroinhasTable({ coroinhas, onUpdate }: CoroinhasTableProps) {
   const { toast } = useToast();
@@ -38,11 +71,32 @@ export function CoroinhasTable({ coroinhas, onUpdate }: CoroinhasTableProps) {
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [selectedCoroinha, setSelectedCoroinha] = useState<Coroinha | null>(null);
   const [sorting, setSorting] = useState<SortingState>([]);
-  
-  // Column Helper
-  const columnHelper = createColumnHelper<Coroinha>();
+  const [columnVisibility, setColumnVisibility] = useState({
+    nome: true,
+    acolito: true,
+    sub_acolito: true,
+    disponibilidade_dias: true,
+    disponibilidade_locais: true,
+    actions: true,
+  });
 
-  // Definição das colunas
+  const columnHelper = createColumnHelper<Coroinha>();
+  const columnLabels = {
+    nome: 'Nome',
+    acolito: 'ACÓLITO',
+    sub_acolito: 'SUB-ACÓLITO',
+    disponibilidade_dias: 'DIAS DISPONÍVEIS',
+    disponibilidade_locais: 'LOCAIS DISPONÍVEIS',
+    actions: 'AÇÕES'
+  };
+
+  const handleColumnVisibilityChange = (column: string) => {
+    setColumnVisibility(prev => ({
+      ...prev,
+      [column]: !prev[column as keyof typeof prev]
+    }));
+  };
+
   const columns = useMemo(
     () => [
       columnHelper.accessor('nome', {
@@ -128,26 +182,24 @@ export function CoroinhasTable({ coroinhas, onUpdate }: CoroinhasTableProps) {
     []
   );
 
-  // Ordena os coroinhas por nome
-  const coroinhasOrdenados = useMemo(() => {
-    return [...coroinhas].sort((a, b) => 
-      a.nome.localeCompare(b.nome, 'pt-BR', { sensitivity: 'base' })
-    );
-  }, [coroinhas]);
+  const coroinhasOrdenados = useMemo(() => 
+    [...coroinhas].sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR', { sensitivity: 'base' })),
+    [coroinhas]
+  );
 
-  // Use coroinhasOrdenados ao invés de coroinhas diretamente na tabela
   const table = useReactTable({
     data: coroinhasOrdenados,
     columns,
-    getCoreRowModel: getCoreRowModel(),
-    getSortedRowModel: getSortedRowModel(),
-    onSortingChange: setSorting,
     state: {
       sorting,
+      columnVisibility,
     },
+    onSortingChange: setSorting,
+    onColumnVisibilityChange: setColumnVisibility,
+    getCoreRowModel: getCoreRowModel(),
+    getSortedRowModel: getSortedRowModel(),
   });
 
-  // Funções de manipulação
   const handleImportXLSX = () => {
     const input = document.createElement('input');
     input.type = 'file';
@@ -157,7 +209,6 @@ export function CoroinhasTable({ coroinhas, onUpdate }: CoroinhasTableProps) {
       const file = (e.target as HTMLInputElement).files?.[0];
       if (!file) return;
 
-      // Validações do arquivo
       if (!file.name.match(/\.(xlsx|xls)$/i)) {
         toast({
           title: "Erro",
@@ -169,12 +220,9 @@ export function CoroinhasTable({ coroinhas, onUpdate }: CoroinhasTableProps) {
 
       const formData = new FormData();
       formData.append('file', file);
-      
-      // Adiciona informação sobre a estrutura esperada
       formData.append('type', 'coroinhas');
 
       try {
-        // Primeiro, verifica se o arquivo pode ser lido
         const response = await fetch('/api/coroinhas/import', {
           method: 'POST',
           body: formData,
@@ -186,7 +234,6 @@ export function CoroinhasTable({ coroinhas, onUpdate }: CoroinhasTableProps) {
         const data = await response.json();
 
         if (!response.ok) {
-          // Tratamento específico para diferentes tipos de erro
           if (data.error === "Erro ao importar dados" && data.details === "coroinhas is not iterable") {
             throw new Error(
               "O arquivo não está no formato correto. Certifique-se que o arquivo Excel contenha as colunas: " +
@@ -220,15 +267,13 @@ export function CoroinhasTable({ coroinhas, onUpdate }: CoroinhasTableProps) {
               "- Deve conter uma lista de coroinhas\n" +
               "- Cada linha deve ter as informações completas do coroinha",
           variant: "destructive",
-          duration: 6000, // Aumenta o tempo para ler a mensagem
+          duration: 6000,
         });
 
-        // Limpa o input para permitir selecionar o mesmo arquivo novamente
         input.value = '';
       }
     };
 
-    // Adiciona informação visual sobre o formato esperado
     toast({
       title: "Selecione o arquivo",
       description: "O arquivo Excel deve conter as seguintes colunas:\n" +
@@ -274,7 +319,6 @@ export function CoroinhasTable({ coroinhas, onUpdate }: CoroinhasTableProps) {
     }
   };
 
-  // Adicione esta nova função após as outras funções de manipulação
   const handleDeleteAll = async () => {
     if (confirm('Tem certeza que deseja excluir TODOS os coroinhas? Esta ação não pode ser desfeita.')) {
       try {
@@ -302,7 +346,6 @@ export function CoroinhasTable({ coroinhas, onUpdate }: CoroinhasTableProps) {
     }
   };
 
-  // Adicione a função handleExportXLSX após as outras funções de manipulação
   const handleExportXLSX = async () => {
     try {
       const response = await fetch('/api/coroinhas/export', {
@@ -313,20 +356,14 @@ export function CoroinhasTable({ coroinhas, onUpdate }: CoroinhasTableProps) {
         throw new Error('Erro ao exportar dados');
       }
 
-      // Criar um blob a partir da resposta
       const blob = await response.blob();
-      
-      // Criar URL do blob
       const url = window.URL.createObjectURL(blob);
-      
-      // Criar link temporário e clicar nele
       const a = document.createElement('a');
       a.href = url;
       a.download = 'coroinhas.xlsx';
       document.body.appendChild(a);
       a.click();
       
-      // Limpar
       window.URL.revokeObjectURL(url);
       document.body.removeChild(a);
 
@@ -347,7 +384,18 @@ export function CoroinhasTable({ coroinhas, onUpdate }: CoroinhasTableProps) {
     <div className="container mx-auto p-4">
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold">Coroinhas</h1>
-        <div className="flex gap-3">
+        <div className="flex gap-3 items-center">
+          <ColumnVisibilityControl
+            columns={Object.values(columnLabels)}
+            visibleColumns={Object.entries(columnVisibility)
+              .filter(([_, visible]) => visible)
+              .map(([key]) => columnLabels[key as keyof typeof columnLabels])}
+            onVisibilityChange={(columnLabel) => {
+              const columnKey = Object.entries(columnLabels)
+                .find(([, label]) => label === columnLabel)?.[0];
+              if (columnKey) handleColumnVisibilityChange(columnKey);
+            }}
+          />
           <Button
             onClick={handleDeleteAll}
             className="flex items-center gap-2 bg-red-600 text-white hover:bg-red-700"
@@ -382,46 +430,68 @@ export function CoroinhasTable({ coroinhas, onUpdate }: CoroinhasTableProps) {
         </div>
       </div>
       
-      <div className="bg-white rounded-lg shadow overflow-x-auto">
-        <table className="w-full">
-          <thead className="bg-gray-50">
-            {table.getHeaderGroups().map(headerGroup => (
-              <tr key={headerGroup.id}>
-                {headerGroup.headers.map(header => (
-                  <th 
-                    key={header.id}
-                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-                  >
-                    {flexRender(
-                      header.column.columnDef.header,
-                      header.getContext()
-                    )}
-                  </th>
-                ))}
-              </tr>
-            ))}
-          </thead>
-          <tbody className="bg-white divide-y divide-gray-200">
-            {table.getRowModel().rows.map(row => (
-              <tr 
-                key={row.id}
-                className="hover:bg-gray-50"
-              >
-                {row.getVisibleCells().map(cell => (
-                  <td 
-                    key={cell.id}
-                    className="px-6 py-4 whitespace-nowrap"
-                  >
-                    {flexRender(
-                      cell.column.columnDef.cell,
-                      cell.getContext()
-                    )}
-                  </td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      <div className="bg-white rounded-lg shadow overflow-hidden">
+        <div className="overflow-auto max-h-[800px] relative">
+          <table className="w-full">
+            <thead className="bg-gray-50 sticky top-0 z-50 shadow-sm">
+              {table.getHeaderGroups().map(headerGroup => (
+                <tr key={headerGroup.id}>
+                  {headerGroup.headers.map((header, index) => {
+                    const isFirst = index === 0;
+                    const isLast = index === headerGroup.headers.length - 1;
+                    return (
+                      <th 
+                        key={header.id}
+                        className={`
+                          px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider
+                          bg-gray-50
+                          ${isFirst ? 'sticky left-0 z-[100]' : ''}
+                          ${isLast ? 'sticky right-0 z-[100]' : ''}
+                        `}
+                        style={{
+                          minWidth: isFirst ? '200px' : '150px',
+                          maxWidth: isFirst ? '200px' : 'none'
+                        }}
+                      >
+                        {flexRender(header.column.columnDef.header, header.getContext())}
+                      </th>
+                    );
+                  })}
+                </tr>
+              ))}
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {table.getRowModel().rows.map(row => (
+                <tr 
+                  key={row.id}
+                  className="hover:bg-gray-50"
+                >
+                  {row.getVisibleCells().map((cell, index) => {
+                    const isFirst = index === 0;
+                    const isLast = index === row.getVisibleCells().length - 1;
+                    return (
+                      <td 
+                        key={cell.id}
+                        className={`
+                          px-6 py-4 whitespace-nowrap
+                          bg-white
+                          ${isFirst ? 'sticky left-0 z-40' : ''}
+                          ${isLast ? 'sticky right-0 z-40' : ''}
+                        `}
+                        style={{
+                          minWidth: isFirst ? '200px' : '150px',
+                          maxWidth: isFirst ? '200px' : 'none'
+                        }}
+                      >
+                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       {showAddDialog && (

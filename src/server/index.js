@@ -737,8 +737,10 @@ app.get('/api/opcoes', async (req, res) => {
       // Extrair e normalizar os locais únicos
       const locaisSet = new Set();
       rows.forEach(row => {
-        const locais = row.local.split(',').map(l => l.trim().replace(/["\[\]]/g, ''));
-        locais.forEach(l => locaisSet.add(l));
+        if (row.local) { // Verificar se row.local não é null
+          const locais = row.local.split(',').map(l => l.trim().replace(/["\[\]]/g, ''));
+          locais.forEach(l => locaisSet.add(l));
+        }
       });
 
       // Se não houver locais no banco, usar locais padrão
@@ -781,8 +783,10 @@ app.get('/api/locais', async (req, res) => {
       // Extrair e normalizar os locais únicos
       const locaisSet = new Set();
       rows.forEach(row => {
-        const locais = row.local.split(',').map(l => l.trim().replace(/["\[\]]/g, ''));
-        locais.forEach(l => locaisSet.add(l));
+        if (row.local) { // Verificar se row.local não é null
+          const locais = row.local.split(',').map(l => l.trim().replace(/["\[\]]/g, ''));
+          locais.forEach(l => locaisSet.add(l));
+        }
       });
 
       // Se não houver locais no banco, usar locais padrão
