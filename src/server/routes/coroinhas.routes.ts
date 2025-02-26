@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { CoroinhasController } from "../controllers/CoroinhasController";
+import { CoroinhasController } from "../controllers/CoroinhasController.js";
 import multer from "multer";
 
 const router = Router();
@@ -17,5 +17,6 @@ router.post(
   coroinhasController.importarCoroinhas,
 );
 router.get("/export", coroinhasController.exportarCoroinhas);
+router.post("/:id/reset-escala", coroinhasController.resetarEscala);
 
 export default router;

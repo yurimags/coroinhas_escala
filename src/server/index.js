@@ -4,6 +4,9 @@ import cors from 'cors';
 import mysql from 'mysql2/promise';
 import multer from 'multer';
 import xlsx from 'xlsx';
+import { EscalasController } from './controllers/EscalasController.ts';
+
+const escalasController = new EscalasController();
 
 const app = express();
 
@@ -42,6 +45,10 @@ const upload = multer({ storage: multer.memoryStorage() });
 app.get('/api/test', (req, res) => {
   res.json({ message: 'Servidor está funcionando!' });
 });
+
+app.post('/api/escalas/gerar', async (req,res) => {
+    escalasController.gerarEscala(req,res);
+})
 
 // Rota para listar todos os coroinhas
 app.get('/api/coroinhas', async (req, res) => {
@@ -162,7 +169,7 @@ app.put('/api/coroinhas/:id', async (req, res) => {
 const DIAS_SEMANA = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"];
 const DIAS_COMPLETOS = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado", "Domingo"];
 
-app.post('/api/escalas/gerar', async (req, res) => {
+app.post('/api/escalas/gerarrr', async (req, res) => {
   let connection;
   try {
     const { locais, dias, horarios, regras, numeroCoroinhas } = req.body;
@@ -520,17 +527,19 @@ app.get('/api/locais-disponiveis', async (req, res) => {
       WHERE disponibilidade_locais IS NOT NULL
         AND disponibilidade_locais != '[]'
     `);
-    
+
     // Extrair os locais únicos do resultado
     const locaisSet = new Set();
     rows.forEach(row => {
-      const locais = row.local.split(',').map(l => l.trim().replace(/["\[\]]/g, ''));
-      locais.forEach(l => locaisSet.add(l));
+      if (row.local) {  // Verifica se o valor não é nulo
+        const locais = row.local.split(',').map(l => l.trim().replace(/["\[\]]/g, ''));
+        locais.forEach(l => locaisSet.add(l));
+      }
     });
-    
+
     const locais = Array.from(locaisSet).sort();
     console.log('Locais disponíveis:', locais); // Debug
-    
+
     res.json(locais);
   } catch (error) {
     console.error('Erro ao buscar locais:', error);
@@ -539,6 +548,7 @@ app.get('/api/locais-disponiveis', async (req, res) => {
     if (connection) connection.release();
   }
 });
+
 
 // Função auxiliar para obter o dia da semana
 function getDiaSemana(date) {

@@ -6,6 +6,7 @@ import {
   createColumnHelper,
   flexRender,
   type SortingState,
+  type VisibilityState,
 } from '@tanstack/react-table';
 import { ArrowUpDown, Edit2, Trash2, Plus, Upload, Download, Settings2 } from 'lucide-react';
 import { Button } from "@/components/ui/button";
@@ -17,16 +18,7 @@ import {
   DropdownMenuContent,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-
-interface Coroinha {
-  id: number;
-  nome: string;
-  acolito: boolean;
-  sub_acolito: boolean;
-  disponibilidade_dias: string[];
-  disponibilidade_locais: string[];
-  escala: number;
-}
+import { Coroinha } from '@/types/coroinha';
 
 interface CoroinhasTableProps {
   coroinhas: Coroinha[];
@@ -65,13 +57,24 @@ const ColumnVisibilityControl = ({
   </DropdownMenu>
 );
 
+// Função auxiliar para converter string em array
+const parseStringToArray = (value: string | string[]): string[] => {
+  if (Array.isArray(value)) return value;
+  try {
+    const parsed = JSON.parse(value as string);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return (value as string).split(',').map(item => item.trim());
+  }
+};
+
 export function CoroinhasTable({ coroinhas, onUpdate }: CoroinhasTableProps) {
   const { toast } = useToast();
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [selectedCoroinha, setSelectedCoroinha] = useState<Coroinha | null>(null);
   const [sorting, setSorting] = useState<SortingState>([]);
-  const [columnVisibility, setColumnVisibility] = useState({
+  const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({
     nome: true,
     acolito: true,
     sub_acolito: true,
@@ -132,27 +135,33 @@ export function CoroinhasTable({ coroinhas, onUpdate }: CoroinhasTableProps) {
       }),
       columnHelper.accessor('disponibilidade_dias', {
         header: 'DIAS DISPONÍVEIS',
-        cell: (info) => (
-          <div className="flex flex-wrap gap-1">
-            {info.getValue().map((dia) => (
-              <span key={dia} className="px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded-full">
-                {dia}
-              </span>
-            ))}
-          </div>
-        ),
+        cell: (info) => {
+          const dias = parseStringToArray(info.getValue());
+          return (
+            <div className="flex flex-wrap gap-1">
+              {dias.map((dia) => (
+                <span key={dia} className="px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded-full">
+                  {dia}
+                </span>
+              ))}
+            </div>
+          );
+        },
       }),
       columnHelper.accessor('disponibilidade_locais', {
         header: 'LOCAIS DISPONÍVEIS',
-        cell: (info) => (
-          <div className="flex flex-wrap gap-1">
-            {info.getValue().map((local) => (
-              <span key={local} className="px-2 py-1 text-xs bg-green-100 text-green-800 rounded-full">
-                {local}
-              </span>
-            ))}
-          </div>
-        ),
+        cell: (info) => {
+          const locais = parseStringToArray(info.getValue());
+          return (
+            <div className="flex flex-wrap gap-1">
+              {locais.map((local) => (
+                <span key={local} className="px-2 py-1 text-xs bg-green-100 text-green-800 rounded-full">
+                  {local}
+                </span>
+              ))}
+            </div>
+          );
+        },
       }),
       columnHelper.display({
         id: 'actions',

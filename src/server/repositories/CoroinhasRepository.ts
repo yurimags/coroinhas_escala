@@ -1,14 +1,15 @@
 import { pool } from "../config/database";
 import { Coroinha } from "../types/Coroinha";
+import { PrismaClient } from "@prisma/client";
+
+const prisma = new PrismaClient();
 
 export class CoroinhasRepository {
   async listar() {
-    const connection = await pool.getConnection();
     try {
-      const [rows] = await connection.query("SELECT * FROM Coroinhas");
-      return this.formatarCoroinhas(rows);
-    } finally {
-      connection.release();
+      return await prisma.coroinhas.findMany();
+    } catch (error) {
+      throw error;
     }
   }
 
@@ -68,15 +69,12 @@ export class CoroinhasRepository {
   }
 
   async deletar(id: number) {
-    const connection = await pool.getConnection();
     try {
-      const [result] = await connection.query(
-        "DELETE FROM Coroinhas WHERE id = ?",
-        [id],
-      );
-      return result.affectedRows > 0;
-    } finally {
-      connection.release();
+      await prisma.coroinhas.delete({
+        where: { id }
+      });
+    } catch (error) {
+      throw error;
     }
   }
 
@@ -87,6 +85,17 @@ export class CoroinhasRepository {
       return true;
     } finally {
       connection.release();
+    }
+  }
+
+  async resetarEscala(id: number) {
+    try {
+      await prisma.coroinhas.update({
+        where: { id },
+        data: { escala: 0 }
+      });
+    } catch (error) {
+      throw error;
     }
   }
 

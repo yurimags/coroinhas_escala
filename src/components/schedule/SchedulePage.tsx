@@ -73,7 +73,7 @@ export function SchedulePage() {
   const fetchLocais = async () => {
     try {
       const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3001';
-      const response = await fetch(`${apiUrl}/api/locais-disponiveis`);
+      const response = await fetch(`${apiUrl}/api/locais/disponiveis`);
       const data = await response.json();
       setLocais(data.locais || []);
     } catch (error) {

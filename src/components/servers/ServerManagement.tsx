@@ -44,6 +44,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import * as XLSX from 'xlsx';
+import { Coroinha } from '@/types/coroinha';
 
 interface ServerDisplay {
   id: number;
@@ -123,16 +124,6 @@ const ServerForm: React.FC<{ server?: Server; onClose?: () => void }> = ({
   );
 };
 
-interface Coroinha {
-  id?: number;
-  nome: string;
-  acolito: boolean;
-  sub_acolito: boolean;
-  disponibilidade_dias: string[];
-  disponibilidade_locais: string[];
-  escala: number;
-}
-
 interface ServerManagementProps {
   mode: 'add' | 'edit';
   coroinha?: Coroinha;
@@ -162,7 +153,7 @@ export function ServerManagement({ mode, coroinha, onClose, onUpdate }: ServerMa
   useEffect(() => {
     const buscarOpcoes = async () => {
       try {
-        const response = await fetch('/api/opcoes');
+        const response = await fetch('/api/locais/opcoes');
         const data = await response.json();
         setOpcoes({
           diasSemana: data.diasSemana,

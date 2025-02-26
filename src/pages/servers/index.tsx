@@ -1,15 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { CoroinhasTable } from '@/components/servers/CoroinhasTable';
 import { toast } from '@/components/ui/use-toast';
-
-interface Coroinha {
-  id: number;
-  nome: string;
-  acolito: boolean;
-  sub_acolito: boolean;
-  disponibilidade_dias: string[];
-  disponibilidade_locais: string[];
-}
+import { Coroinha } from '@/types/coroinha';
 
 export default function ServersPage() {
   const [coroinhas, setCoroinhas] = useState<Coroinha[]>([]);

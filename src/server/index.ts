@@ -1,52 +1,69 @@
-const express = require('express');
-const { PrismaClient } = require('@prisma/client');
-const cors = require('cors');
+import 'dotenv/config';
+import express from 'express';
+import cors from 'cors';
+import { pool } from './config/database';
+import routes from './routes/index';
 
 const app = express();
-const prisma = new PrismaClient();
 
-app.use(cors());
-app.use(express.json());
+// Configurações
+app.use(cors({
+  origin: ['http://localhost:5173', 'http://localhost:3000', 'http://127.0.0.1:5173', 'http://127.0.0.1:3000'],
+  methods: ['GET', 'POST', 'PUT', 'DELETE'],
+  credentials: true,
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
 
-// Listar todos os coroinhas
-app.get('/api/coroinhas', async (req, res) => {
-  try {
-    const coroinhas = await prisma.coroinhas.findMany();
-    res.json(coroinhas);
-  } catch (error) {
-    console.error('Erro ao buscar coroinhas:', error);
-    res.status(500).json({ error: 'Erro ao buscar coroinhas' });
-  }
+app.use(express.json({ limit: '50mb' }));
+
+// Adicionar middleware para logging de requisições
+app.use((req, res, next) => {
+  console.log(`${req.method} ${req.url}`);
+  next();
 });
 
-// Deletar coroinha
-app.delete('/api/coroinhas/:id', async (req, res) => {
-  try {
-    await prisma.coroinhas.delete({
-      where: { id: parseInt(req.params.id) }
-    });
-    res.json({ success: true });
-  } catch (error) {
-    console.error('Erro ao deletar coroinha:', error);
-    res.status(500).json({ error: 'Erro ao deletar coroinha' });
-  }
+// Rotas
+app.use(routes);
+
+// Tratamento de erros
+app.use((err: Error, req: express.Request, res: express.Response, next: express.NextFunction) => {
+  console.error(err.stack);
+  res.status(500).json({ error: 'Algo deu errado!' });
 });
 
-// Resetar escala
-app.post('/api/coroinhas/:id/reset-escala', async (req, res) => {
+// Função para testar conexão com o banco
+async function testDatabaseConnection() {
   try {
-    await prisma.coroinhas.update({
-      where: { id: parseInt(req.params.id) },
-      data: { escala: 0 }
-    });
-    res.json({ success: true });
+    const connection = await pool.getConnection();
+    console.log('Conexão com o banco de dados estabelecida com sucesso!');
+    connection.release();
+    return true;
   } catch (error) {
-    console.error('Erro ao resetar escala:', error);
-    res.status(500).json({ error: 'Erro ao resetar escala' });
+    console.error('Erro ao conectar com o banco de dados:', error);
+    return false;
   }
-});
+}
 
+// Iniciar servidor apenas se conseguir conectar ao banco
 const PORT = process.env.PORT || 3001;
-app.listen(PORT, () => {
-  console.log(`Servidor rodando na porta ${PORT}`);
+
+testDatabaseConnection().then(success => {
+  if (success) {
+    app.listen(PORT, () => {
+      console.log(`Servidor rodando em http://localhost:${PORT}`);
+      console.log('Pressione Ctrl+C para parar o servidor');
+    });
+  } else {
+    console.error('Não foi possível iniciar o servidor devido a erro na conexão com o banco');
+    process.exit(1);
+  }
+});
+
+// Tratamento de erros não capturados
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+});
+
+process.on('uncaughtException', (error) => {
+  console.error('Uncaught Exception:', error);
 }); 

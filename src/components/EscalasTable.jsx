@@ -62,13 +62,30 @@ const EscalasTable = () => {
 
   const handleGerarEscala = async (values) => {
     try {
+      // Converter o dia da semana para o formato correto em português
+      const diaSemana = values.data.format('dddd');
+      const diaFormatado = {
+        'Sunday': 'Domingo',
+        'Monday': 'Segunda',
+        'Tuesday': 'Terça',
+        'Wednesday': 'Quarta',
+        'Thursday': 'Quinta',
+        'Friday': 'Sexta',
+        'Saturday': 'Sábado'
+      }[diaSemana];
+
       const response = await fetch('/api/escalas/gerar', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          data: values.data.format('YYYY-MM-DD'),
-          horario: values.horario.format('HH:mm:ss'),
-          local: values.local
+          locais: [values.local],
+          dias: [diaFormatado],
+          horarios: [values.horario],
+          regras: {
+            limiteDiario: 1,
+            prioridadeAcolitos: false
+          },
+          numeroCoroinhas: 1
         })
       });
 
@@ -79,7 +96,7 @@ const EscalasTable = () => {
         setModalVisible(false);
         form.resetFields();
       } else {
-        throw new Error(data.error);
+        throw new Error(data.error || 'Erro ao gerar escala');
       }
     } catch (error) {
       message.error(error.message || 'Erro ao gerar escala');
