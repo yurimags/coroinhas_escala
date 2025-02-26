@@ -5,8 +5,10 @@ import locaisRoutes from "./locais.routes";
 
 const router = Router();
 
+// Mount all routes
 router.use("/coroinhas", coroinhasRoutes);
 router.use("/escalas", escalasRoutes);
 router.use("/locais", locaisRoutes);
+router.use("/opcoes", locaisRoutes);
 
 export default router;

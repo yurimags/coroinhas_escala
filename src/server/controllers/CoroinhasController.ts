@@ -1,16 +1,16 @@
 import { Request, Response } from "express";
-import { ListarCoroinhasUseCase } from "../useCases/coroinhas/ListarCoroinhasUseCase";
-import { AdicionarCoroinhaUseCase } from "../useCases/coroinhas/AdicionarCoroinhaUseCase";
-import { AtualizarCoroinhaUseCase } from "../useCases/coroinhas/AtualizarCoroinhaUseCase";
-import { DeletarCoroinhaUseCase } from "../useCases/coroinhas/DeletarCoroinhaUseCase";
-import { ImportarCoroinhasUseCase } from "../useCases/coroinhas/ImportarCoroinhasUseCase";
-import { ExportarCoroinhasUseCase } from "../useCases/coroinhas/ExportarCoroinhasUseCase";
+import { CoroinhasRepository } from "../repositories/CoroinhasRepository";
 
 export class CoroinhasController {
+  private repository: CoroinhasRepository;
+
+  constructor() {
+    this.repository = new CoroinhasRepository();
+  }
+
   async listarCoroinhas(req: Request, res: Response) {
     try {
-      const useCase = new ListarCoroinhasUseCase();
-      const coroinhas = await useCase.execute();
+      const coroinhas = await this.repository.listar();
       res.json(coroinhas);
     } catch (error) {
       res.status(500).json({
@@ -22,9 +22,12 @@ export class CoroinhasController {
 
   async adicionarCoroinha(req: Request, res: Response) {
     try {
-      const useCase = new AdicionarCoroinhaUseCase();
-      const resultado = await useCase.execute(req.body);
-      res.json(resultado);
+      const resultado = await this.repository.adicionar(req.body);
+      res.json({
+        success: true,
+        message: "Coroinha adicionado com sucesso",
+        id: resultado.id,
+      });
     } catch (error) {
       res.status(500).json({
         error: "Erro ao adicionar coroinha",
@@ -35,12 +38,12 @@ export class CoroinhasController {
 
   async atualizarCoroinha(req: Request, res: Response) {
     try {
-      const useCase = new AtualizarCoroinhaUseCase();
-      const resultado = await useCase.execute({
-        id: parseInt(req.params.id),
-        ...req.body,
+      const { id } = req.params;
+      await this.repository.atualizar(parseInt(id), req.body);
+      res.json({
+        success: true,
+        message: "Coroinha atualizado com sucesso",
       });
-      res.json(resultado);
     } catch (error) {
       res.status(500).json({
         error: "Erro ao atualizar coroinha",
@@ -51,9 +54,12 @@ export class CoroinhasController {
 
   async deletarCoroinha(req: Request, res: Response) {
     try {
-      const useCase = new DeletarCoroinhaUseCase();
-      await useCase.execute(parseInt(req.params.id));
-      res.json({ success: true });
+      const { id } = req.params;
+      await this.repository.deletar(parseInt(id));
+      res.json({
+        success: true,
+        message: "Coroinha deletado com sucesso",
+      });
     } catch (error) {
       res.status(500).json({
         error: "Erro ao deletar coroinha",
@@ -64,8 +70,7 @@ export class CoroinhasController {
 
   async deletarTodos(req: Request, res: Response) {
     try {
-      const useCase = new DeletarCoroinhaUseCase();
-      await useCase.executeDeletarTodos();
+      await this.repository.deletarTodos();
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({
@@ -77,8 +82,10 @@ export class CoroinhasController {
 
   async importarCoroinhas(req: Request, res: Response) {
     try {
-      const useCase = new ImportarCoroinhasUseCase();
-      const resultado = await useCase.execute(req.file);
+      if (!req.file) {
+        throw new Error("Nenhum arquivo foi enviado");
+      }
+      const resultado = await this.repository.importar(req.file);
       res.json(resultado);
     } catch (error) {
       res.status(500).json({
@@ -90,9 +97,7 @@ export class CoroinhasController {
 
   async exportarCoroinhas(req: Request, res: Response) {
     try {
-      const useCase = new ExportarCoroinhasUseCase();
-      const buffer = await useCase.execute();
-
+      const buffer = await this.repository.exportar();
       res.setHeader(
         "Content-Type",
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -105,6 +110,22 @@ export class CoroinhasController {
     } catch (error) {
       res.status(500).json({
         error: "Erro ao exportar coroinhas",
+        details: error instanceof Error ? error.message : "Erro desconhecido",
+      });
+    }
+  }
+
+  async resetarEscala(req: Request, res: Response) {
+    try {
+      const { id } = req.params;
+      await this.repository.resetarEscala(parseInt(id));
+      res.json({
+        success: true,
+        message: "Escala resetada com sucesso!",
+      });
+    } catch (error) {
+      res.status(500).json({
+        error: "Erro ao resetar escala",
         details: error instanceof Error ? error.message : "Erro desconhecido",
       });
     }
