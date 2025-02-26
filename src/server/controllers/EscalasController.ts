@@ -16,14 +16,38 @@ interface Escala {
   horario: string;
   local: string;
   coroinha_id: number;
-  periodo_id: number;
+  periodo_id?: number;
+  status?: 'ativo' | 'cancelado';
 }
 
-interface Evento {
-  data: string | Date;
+interface EventoPeriodo {
+  data: string;
   local: string;
   horario: string;
   numero_coroinhas: number;
+  dia_semana?: string;
+}
+
+interface Alerta {
+  mensagem: string;
+  tipo: 'info' | 'warning' | 'error';
+}
+
+interface EscalaCreate {
+  data: Date;
+  horario: string;
+  local: string;
+  coroinha_id: number;
+  periodo_id?: number;
+}
+
+interface EscalaUpdate {
+  data?: Date;
+  horario?: string;
+  local?: string;
+  coroinha_id?: number;
+  periodo_id?: number;
+  status?: 'ativo' | 'cancelado';
 }
 
 function getDiaSemana(data: Date): string {
@@ -58,6 +82,8 @@ export class EscalasController {
     this.criarPeriodo = this.criarPeriodo.bind(this);
     this.listarPeriodos = this.listarPeriodos.bind(this);
     this.listarEventosPeriodo = this.listarEventosPeriodo.bind(this);
+    this.criarDisponibilidadePeriodo = this.criarDisponibilidadePeriodo.bind(this);
+    this.listarDisponibilidadesPeriodo = this.listarDisponibilidadesPeriodo.bind(this);
   }
 
   async criarPeriodo(req: Request, res: Response) {
@@ -70,7 +96,7 @@ export class EscalasController {
         data_inicio: new Date(data_inicio),
         data_fim: new Date(data_fim),
         nome,
-        eventos: eventos?.map((e: Evento) => ({
+        eventos: eventos?.map((e: EventoPeriodo) => ({
           ...e,
           data: new Date(e.data)
         }))
@@ -114,6 +140,19 @@ export class EscalasController {
           evento.local,
           getDiaSemana(new Date(evento.data))
         );
+
+        // Extrair locais, dias e horários únicos dos eventos
+        const locaisUnicos = [...new Set(eventos.map((e: EventoPeriodo) => e.local))];
+        const diasUnicos = [...new Set(eventos.map((e: EventoPeriodo) => getDiaSemana(new Date(e.data))))];
+        const horariosUnicos = [...new Set(eventos.map((e: EventoPeriodo) => e.horario))];
+
+        console.log('Dados para geração:', {
+          periodo_id,
+          locais: locaisUnicos,
+          dias: diasUnicos,
+          horarios: horariosUnicos,
+          eventos
+        });
 
         // Filtrar coroinhas por tipo (acólito, sub-acólito, outros)
         const acolitos = coroinhasDisponiveis.filter(c => c.acolito);
@@ -234,12 +273,13 @@ export class EscalasController {
   async criarEscala(req: Request, res: Response) {
     try {
       const { data, horario, local, coroinha_id } = req.body;
-      const resultado = await this.repository.criar({
-        data,
+      const escalaData: EscalaCreate = {
+        data: new Date(data),
         horario,
         local,
         coroinha_id,
-      });
+      };
+      const resultado = await this.repository.criar(escalaData);
       res.json(resultado);
     } catch (error) {
       res.status(500).json({
@@ -253,12 +293,13 @@ export class EscalasController {
     try {
       const { id } = req.params;
       const { coroinha_id, data, horario, local } = req.body;
-      const resultado = await this.repository.atualizar(parseInt(id), {
+      const escalaData: EscalaUpdate = {
         coroinha_id,
-        data,
+        data: data ? new Date(data) : undefined,
         horario,
         local,
-      });
+      };
+      const resultado = await this.repository.atualizar(parseInt(id), escalaData);
       res.json(resultado);
     } catch (error) {
       res.status(500).json({
@@ -331,6 +372,43 @@ export class EscalasController {
     } catch (error) {
       res.status(500).json({
         error: "Erro ao listar eventos do período",
+        details: error instanceof Error ? error.message : "Erro desconhecido"
+      });
+    }
+  }
+
+  async criarDisponibilidadePeriodo(req: Request, res: Response) {
+    try {
+      const { periodo_id } = req.params;
+      const { coroinha_id, disponibilidade_dias, disponibilidade_locais } = req.body;
+
+      await this.periodosRepository.criarDisponibilidadePeriodo({
+        periodo_id: parseInt(periodo_id),
+        coroinha_id,
+        disponibilidade_dias,
+        disponibilidade_locais
+      });
+
+      res.json({
+        success: true,
+        message: "Disponibilidade personalizada criada com sucesso"
+      });
+    } catch (error) {
+      res.status(500).json({
+        error: "Erro ao criar disponibilidade personalizada",
+        details: error instanceof Error ? error.message : "Erro desconhecido"
+      });
+    }
+  }
+
+  async listarDisponibilidadesPeriodo(req: Request, res: Response) {
+    try {
+      const { periodo_id } = req.params;
+      const disponibilidades = await this.periodosRepository.obterDisponibilidadesPeriodo(parseInt(periodo_id));
+      res.json(disponibilidades);
+    } catch (error) {
+      res.status(500).json({
+        error: "Erro ao listar disponibilidades do período",
         details: error instanceof Error ? error.message : "Erro desconhecido"
       });
     }

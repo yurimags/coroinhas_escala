@@ -38,7 +38,7 @@ interface DisponibilidadePeriodo {
 export class PeriodosEscalaRepository {
   async listar() {
     const [rows] = await pool.query(
-      'SELECT * FROM PeriodosEscala ORDER BY data_inicio DESC'
+      'SELECT * FROM periodos_escala ORDER BY data_inicio DESC'
     );
     return rows;
   }
@@ -51,7 +51,7 @@ export class PeriodosEscalaRepository {
 
       // Inserir o período
       const [result] = await connection.query<ResultSetHeader>(
-        'INSERT INTO PeriodosEscala (data_inicio, data_fim, nome) VALUES (?, ?, ?)',
+        'INSERT INTO periodos_escala (data_inicio, data_fim, nome) VALUES (?, ?, ?)',
         [periodo.data_inicio, periodo.data_fim, periodo.nome]
       );
       
@@ -60,7 +60,7 @@ export class PeriodosEscalaRepository {
       // Se houver eventos, inserir cada um deles
       if (periodo.eventos && periodo.eventos.length > 0) {
         console.log('Inserindo eventos:', periodo.eventos);
-        const insertEventoQuery = 'INSERT INTO EventosPeriodo (periodo_id, data, horario, local, numero_coroinhas, dia_semana) VALUES (?, ?, ?, ?, ?, ?)';
+        const insertEventoQuery = 'INSERT INTO eventos_periodo (periodo_id, data, horario, local, numero_coroinhas, dia_semana) VALUES (?, ?, ?, ?, ?, ?)';
         
         for (const evento of periodo.eventos) {
           const data = new Date(evento.data);
@@ -89,7 +89,7 @@ export class PeriodosEscalaRepository {
 
   async criarDisponibilidadePeriodo(disponibilidade: DisponibilidadePeriodo): Promise<void> {
     await pool.query(
-      'INSERT INTO DisponibilidadesPeriodo (periodo_id, coroinha_id, disponibilidade_dias, disponibilidade_locais) VALUES (?, ?, ?, ?)',
+      'INSERT INTO disponibilidades_periodo (periodo_id, coroinha_id, disponibilidade_dias, disponibilidade_locais) VALUES (?, ?, ?, ?)',
       [
         disponibilidade.periodo_id,
         disponibilidade.coroinha_id,
@@ -101,7 +101,7 @@ export class PeriodosEscalaRepository {
 
   async obterDisponibilidadesPeriodo(periodo_id: number): Promise<DisponibilidadePeriodo[]> {
     const [rows] = await pool.query<RowDataPacket[]>(
-      'SELECT * FROM DisponibilidadesPeriodo WHERE periodo_id = ?',
+      'SELECT * FROM disponibilidades_periodo WHERE periodo_id = ?',
       [periodo_id]
     );
     
@@ -115,14 +115,14 @@ export class PeriodosEscalaRepository {
 
   async registrarServico(coroinha_id: number, periodo_id: number, data: Date, horario: string, local: string): Promise<void> {
     await pool.query(
-      'INSERT INTO ServicosRealizados (coroinha_id, periodo_id, data, horario, local) VALUES (?, ?, ?, ?, ?)',
+      'INSERT INTO servicos_realizados (coroinha_id, periodo_id, data, horario, local) VALUES (?, ?, ?, ?, ?)',
       [coroinha_id, periodo_id, data, horario, local]
     );
   }
 
   async contarServicos(periodo_id: number, coroinha_id: number): Promise<number> {
     const [rows] = await pool.query<RowDataPacket[]>(
-      'SELECT COUNT(*) as total FROM ServicosRealizados WHERE periodo_id = ? AND coroinha_id = ?',
+      'SELECT COUNT(*) as total FROM servicos_realizados WHERE periodo_id = ? AND coroinha_id = ?',
       [periodo_id, coroinha_id]
     );
     return rows[0].total;
@@ -133,32 +133,53 @@ export class PeriodosEscalaRepository {
     data: Date,
     local: string,
     diaSemana: string
-  ): Promise<{ id: number; nome: string; total_servicos: number }[]> {
+  ): Promise<{ id: number; nome: string; total_servicos: number; acolito: boolean; sub_acolito: boolean }[]> {
     const [rows] = await pool.query<RowDataPacket[]>(`
       SELECT 
         c.id,
         c.nome,
+        c.acolito,
+        c.sub_acolito,
         COUNT(e.id) as total_servicos
       FROM Coroinhas c
       LEFT JOIN Escalas e ON e.coroinha_id = c.id AND e.periodo_id = ?
+      LEFT JOIN disponibilidades_periodo dp ON dp.coroinha_id = c.id AND dp.periodo_id = ?
       WHERE 
-        (c.disponibilidade_dias LIKE ? OR JSON_CONTAINS(c.disponibilidade_dias, ?)) AND
-        (c.disponibilidade_locais LIKE ? OR JSON_CONTAINS(c.disponibilidade_locais, ?))
+        (
+          -- Se existir disponibilidade personalizada para o período, usar ela
+          (dp.id IS NOT NULL AND 
+           JSON_CONTAINS(dp.disponibilidade_dias, ?) AND 
+           JSON_CONTAINS(dp.disponibilidade_locais, ?))
+          OR
+          -- Se não existir, usar a disponibilidade padrão do coroinha
+          (dp.id IS NULL AND 
+           JSON_CONTAINS(c.disponibilidade_dias, ?) AND 
+           JSON_CONTAINS(c.disponibilidade_locais, ?))
+        )
       GROUP BY c.id
       ORDER BY total_servicos ASC`,
-      [periodo_id, `%${diaSemana}%`, JSON.stringify(diaSemana), `%${local}%`, JSON.stringify(local)]
+      [
+        periodo_id,
+        periodo_id,
+        JSON.stringify(diaSemana),
+        JSON.stringify(local),
+        JSON.stringify(diaSemana),
+        JSON.stringify(local)
+      ]
     );
 
     return rows.map(row => ({
       id: row.id,
       nome: row.nome,
+      acolito: row.acolito === 1,
+      sub_acolito: row.sub_acolito === 1,
       total_servicos: row.total_servicos
     }));
   }
 
   async listarEventos(periodo_id: number) {
     const [rows] = await pool.query<RowDataPacket[]>(
-      'SELECT data, horario, local, numero_coroinhas, dia_semana FROM EventosPeriodo WHERE periodo_id = ? ORDER BY data, horario',
+      'SELECT data, horario, local, numero_coroinhas, dia_semana FROM eventos_periodo WHERE periodo_id = ? ORDER BY data, horario',
       [periodo_id]
     );
     return rows;

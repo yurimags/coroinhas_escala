@@ -33,6 +33,13 @@ interface EventoPeriodo {
   horario: string;
 }
 
+interface Coroinha {
+  id: number;
+  nome: string;
+  disponibilidade_dias?: string[];
+  disponibilidade_locais?: string[];
+}
+
 interface CreateScheduleDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -59,6 +66,10 @@ export function CreateScheduleDialog({
     },
   });
   const { toast } = useToast();
+  const [coroinhas, setCoroinhas] = useState<Coroinha[]>([]);
+  const [selectedCoroinha, setSelectedCoroinha] = useState<Coroinha | null>(null);
+  const [disponibilidadeDias, setDisponibilidadeDias] = useState<string[]>([]);
+  const [disponibilidadeLocais, setDisponibilidadeLocais] = useState<string[]>([]);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -109,9 +120,70 @@ export function CreateScheduleDialog({
       }
     };
 
+    const fetchCoroinhas = async () => {
+      try {
+        const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+        const response = await fetch(`${apiUrl}/api/coroinhas`);
+        const data = await response.json();
+        
+        setCoroinhas(data.map((c: any) => {
+          let disponibilidade_dias: string[] = [];
+          let disponibilidade_locais: string[] = [];
+
+          try {
+            if (typeof c.disponibilidade_dias === 'string') {
+              if (c.disponibilidade_dias.trim().startsWith('[')) {
+                disponibilidade_dias = JSON.parse(c.disponibilidade_dias);
+              } else {
+                disponibilidade_dias = [c.disponibilidade_dias];
+              }
+            } else if (Array.isArray(c.disponibilidade_dias)) {
+              disponibilidade_dias = c.disponibilidade_dias;
+            }
+          } catch (error: any) {
+            console.error('Erro ao processar disponibilidade_dias:', error);
+            if (typeof c.disponibilidade_dias === 'string') {
+              disponibilidade_dias = c.disponibilidade_dias.split(',').map((d: string) => d.trim()).filter(Boolean);
+            }
+          }
+
+          try {
+            if (typeof c.disponibilidade_locais === 'string') {
+              if (c.disponibilidade_locais.trim().startsWith('[')) {
+                disponibilidade_locais = JSON.parse(c.disponibilidade_locais);
+              } else {
+                disponibilidade_locais = [c.disponibilidade_locais];
+              }
+            } else if (Array.isArray(c.disponibilidade_locais)) {
+              disponibilidade_locais = c.disponibilidade_locais;
+            }
+          } catch (error: any) {
+            console.error('Erro ao processar disponibilidade_locais:', error);
+            if (typeof c.disponibilidade_locais === 'string') {
+              disponibilidade_locais = c.disponibilidade_locais.split(',').map((l: string) => l.trim()).filter(Boolean);
+            }
+          }
+
+          return {
+            ...c,
+            disponibilidade_dias,
+            disponibilidade_locais
+          };
+        }));
+      } catch (error: any) {
+        console.error('Erro ao carregar coroinhas:', error);
+        toast({
+          title: "Erro",
+          description: "Erro ao carregar lista de coroinhas",
+          variant: "destructive",
+        });
+      }
+    };
+
     if (open) {
       console.log('Dialog aberto, buscando dados...');
       fetchData();
+      fetchCoroinhas();
     }
   }, [open, toast]);
 
@@ -302,6 +374,64 @@ export function CreateScheduleDialog({
     }
   };
 
+  const handleSaveDisponibilidade = async () => {
+    if (!selectedCoroinha || !periodoSelecionado) {
+      toast({
+        title: "Erro",
+        description: "Selecione um coroinha e um período",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+      const response = await fetch(`${apiUrl}/api/escalas/periodos/${periodoSelecionado}/disponibilidades`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          coroinha_id: selectedCoroinha.id,
+          disponibilidade_dias: disponibilidadeDias,
+          disponibilidade_locais: disponibilidadeLocais
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Erro ao salvar disponibilidade');
+      }
+
+      toast({
+        title: "Sucesso",
+        description: "Disponibilidade salva com sucesso",
+      });
+
+      // Limpar seleções
+      setSelectedCoroinha(null);
+      setDisponibilidadeDias([]);
+      setDisponibilidadeLocais([]);
+
+    } catch (error) {
+      toast({
+        title: "Erro",
+        description: error instanceof Error ? error.message : "Erro desconhecido",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleCoroinhaSelect = (value: string) => {
+    const selectedCoroinha = coroinhas.find((c: Coroinha) => c.id === parseInt(value));
+    if (selectedCoroinha) {
+      setSelectedCoroinha(selectedCoroinha);
+      setDisponibilidadeDias(selectedCoroinha.disponibilidade_dias || []);
+      setDisponibilidadeLocais(selectedCoroinha.disponibilidade_locais || []);
+    }
+  };
+
+  const handleAlertaChange = (alerta: boolean) => {
+    // Implementation of handleAlertaChange function
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-[95vw] sm:max-w-[800px] max-h-[90vh] overflow-y-auto">
@@ -314,9 +444,10 @@ export function CreateScheduleDialog({
 
         <div className="grid gap-6 py-4">
           <Tabs defaultValue="novo">
-            <TabsList className="grid w-full grid-cols-2">
+            <TabsList className="grid w-full grid-cols-3">
               <TabsTrigger value="novo">Novo Período</TabsTrigger>
               <TabsTrigger value="existente">Gerar Escalas</TabsTrigger>
+              <TabsTrigger value="disponibilidades">Disponibilidades</TabsTrigger>
             </TabsList>
 
             <TabsContent value="novo">
@@ -497,6 +628,112 @@ export function CreateScheduleDialog({
                   {isLoading ? "Gerando..." : "Gerar Escalas"}
                 </Button>
               </div>
+            </TabsContent>
+
+            <TabsContent value="disponibilidades">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base">Definir Disponibilidades Personalizadas</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-4">
+                    <div className="space-y-2">
+                      <Label className="text-sm font-medium">Período*</Label>
+                      <Select value={periodoSelecionado} onValueChange={setPeriodoSelecionado}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Selecione um período" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {periodos.map((periodo) => (
+                            <SelectItem key={periodo.id} value={periodo.id.toString()}>
+                              {periodo.nome} ({new Date(periodo.data_inicio).toLocaleDateString()} - {new Date(periodo.data_fim).toLocaleDateString()})
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label className="text-sm font-medium">Coroinha*</Label>
+                      <Select value={selectedCoroinha?.id.toString()} onValueChange={handleCoroinhaSelect}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Selecione um coroinha" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {coroinhas.map((coroinha) => (
+                            <SelectItem key={coroinha.id} value={coroinha.id.toString()}>
+                              {coroinha.nome}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label className="text-sm font-medium">Dias Disponíveis*</Label>
+                      <div className="grid grid-cols-2 gap-2">
+                        {["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"].map((dia) => (
+                          <div key={dia} className="flex items-center space-x-2">
+                            <Checkbox
+                              id={`dia-${dia}`}
+                              checked={disponibilidadeDias.includes(dia)}
+                              onCheckedChange={(checked) => {
+                                if (checked) {
+                                  setDisponibilidadeDias([...disponibilidadeDias, dia]);
+                                } else {
+                                  setDisponibilidadeDias(disponibilidadeDias.filter(d => d !== dia));
+                                }
+                              }}
+                            />
+                            <Label htmlFor={`dia-${dia}`}>{dia}</Label>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label className="text-sm font-medium">Locais Disponíveis*</Label>
+                      <div className="grid grid-cols-2 gap-2">
+                        {locaisDisponiveis.map((local) => (
+                          <div key={local} className="flex items-center space-x-2">
+                            <Checkbox
+                              id={`local-${local}`}
+                              checked={disponibilidadeLocais.includes(local)}
+                              onCheckedChange={(checked) => {
+                                if (checked) {
+                                  setDisponibilidadeLocais([...disponibilidadeLocais, local]);
+                                } else {
+                                  setDisponibilidadeLocais(disponibilidadeLocais.filter(l => l !== local));
+                                }
+                              }}
+                            />
+                            <Label htmlFor={`local-${local}`}>{local}</Label>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex justify-end space-x-2 mt-4">
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        setSelectedCoroinha(null);
+                        setDisponibilidadeDias([]);
+                        setDisponibilidadeLocais([]);
+                      }}
+                    >
+                      Limpar
+                    </Button>
+                    <Button
+                      onClick={handleSaveDisponibilidade}
+                      disabled={!selectedCoroinha || !periodoSelecionado || disponibilidadeDias.length === 0 || disponibilidadeLocais.length === 0}
+                    >
+                      Salvar Disponibilidade
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
             </TabsContent>
           </Tabs>
         </div>

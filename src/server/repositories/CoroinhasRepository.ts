@@ -1,15 +1,56 @@
 import { pool } from "../config/database";
 import { Coroinha } from "../types/Coroinha";
 import { PrismaClient } from "@prisma/client";
+import xlsx from "xlsx";
 
 const prisma = new PrismaClient();
 
 export class CoroinhasRepository {
   async listar() {
+    const connection = await pool.getConnection();
     try {
-      return await prisma.coroinhas.findMany();
+      const [rows] = await connection.query("SELECT * FROM Coroinhas");
+      return this.formatarCoroinhas(rows);
+    } finally {
+      connection.release();
+    }
+  }
+
+  async exportar() {
+    const connection = await pool.getConnection();
+    try {
+      const [coroinhas] = await connection.query(`
+        SELECT 
+          nome,
+          acolito,
+          sub_acolito,
+          disponibilidade_dias,
+          disponibilidade_locais,
+          escala
+        FROM Coroinhas
+        ORDER BY nome ASC
+      `);
+
+      // Formatar os dados para o Excel
+      const dadosFormatados = coroinhas.map((c: any) => ({
+        Nome: c.nome,
+        Acólito: c.acolito ? 'Sim' : 'Não',
+        'Sub-Acólito': c.sub_acolito ? 'Sim' : 'Não',
+        'Dias Disponíveis': this.parseJSON(c.disponibilidade_dias, []).join(', '),
+        'Locais Disponíveis': this.parseJSON(c.disponibilidade_locais, []).join(', '),
+        'Quantidade de Escalas': c.escala
+      }));
+
+      const wb = xlsx.utils.book_new();
+      const ws = xlsx.utils.json_to_sheet(dadosFormatados);
+      xlsx.utils.book_append_sheet(wb, ws, 'Coroinhas');
+
+      return xlsx.write(wb, { type: 'buffer', bookType: 'xlsx' });
     } catch (error) {
+      console.error('Erro ao exportar coroinhas:', error);
       throw error;
+    } finally {
+      connection.release();
     }
   }
 
@@ -69,12 +110,11 @@ export class CoroinhasRepository {
   }
 
   async deletar(id: number) {
+    const connection = await pool.getConnection();
     try {
-      await prisma.coroinhas.delete({
-        where: { id }
-      });
-    } catch (error) {
-      throw error;
+      await connection.query("DELETE FROM Coroinhas WHERE id = ?", [id]);
+    } finally {
+      connection.release();
     }
   }
 
@@ -89,13 +129,14 @@ export class CoroinhasRepository {
   }
 
   async resetarEscala(id: number) {
+    const connection = await pool.getConnection();
     try {
-      await prisma.coroinhas.update({
-        where: { id },
-        data: { escala: 0 }
-      });
-    } catch (error) {
-      throw error;
+      await connection.query(
+        "UPDATE Coroinhas SET escala = 0 WHERE id = ?",
+        [id]
+      );
+    } finally {
+      connection.release();
     }
   }
 
@@ -112,9 +153,28 @@ export class CoroinhasRepository {
   }
 
   private parseJSON(value: string, defaultValue: any[] = []) {
+    if (!value) return defaultValue;
+    
     try {
-      return value ? JSON.parse(value) : defaultValue;
+      // Se o valor já é um array, retorna ele mesmo
+      if (Array.isArray(value)) return value;
+      
+      // Se é uma string que parece um array JSON
+      if (typeof value === 'string' && value.trim().startsWith('[')) {
+        return JSON.parse(value);
+      }
+      
+      // Se é uma string simples, retorna como item único em um array
+      if (typeof value === 'string') {
+        return [value];
+      }
+      
+      return defaultValue;
     } catch {
+      // Se falhar o parse, tenta tratar como uma string separada por vírgulas
+      if (typeof value === 'string') {
+        return value.split(',').map(item => item.trim());
+      }
       return defaultValue;
     }
   }

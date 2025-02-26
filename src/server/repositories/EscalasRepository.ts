@@ -35,7 +35,7 @@ export class EscalasRepository {
       // Criar nova escala
       const nome = `escala_${dataInicio.toISOString().split("T")[0]}_${dataFim.toISOString().split("T")[0]}`;
       const [result] = await connection.query(
-        "INSERT INTO Escalas (nome, data_inicio, data_fim, status) VALUES (?, ?, ?, ?)",
+        "INSERT INTO escalas (nome, data_inicio, data_fim, status) VALUES (?, ?, ?, ?)",
         [nome, dataInicio, dataFim, "ativa"],
       );
       const escalaId = result.insertId;
@@ -49,7 +49,7 @@ export class EscalasRepository {
           horario TIME,
           local VARCHAR(50),
           status VARCHAR(20) DEFAULT 'agendado',
-          FOREIGN KEY (coroinha_id) REFERENCES Coroinhas(id)
+          FOREIGN KEY (coroinha_id) REFERENCES coroinhas(id)
         )
       `);
 
@@ -60,7 +60,7 @@ export class EscalasRepository {
           coroinha_id INT,
           disponibilidade_dias JSON,
           disponibilidade_locais JSON,
-          FOREIGN KEY (coroinha_id) REFERENCES Coroinhas(id)
+          FOREIGN KEY (coroinha_id) REFERENCES coroinhas(id)
         )
       `);
 
@@ -69,7 +69,7 @@ export class EscalasRepository {
         CREATE TABLE ${nome}_contadores (
           coroinha_id INT,
           quantidade INT DEFAULT 0,
-          FOREIGN KEY (coroinha_id) REFERENCES Coroinhas(id),
+          FOREIGN KEY (coroinha_id) REFERENCES coroinhas(id),
           PRIMARY KEY (coroinha_id)
         )
       `);
@@ -91,7 +91,7 @@ export class EscalasRepository {
     const connection = await pool.getConnection();
     try {
       const [escala] = await connection.query(
-        "SELECT nome FROM Escalas WHERE id = ?",
+        "SELECT nome FROM escalas WHERE id = ?",
         [escalaId],
       );
       const nomeTabela = `${escala[0].nome}_disponibilidades`;
@@ -118,7 +118,7 @@ export class EscalasRepository {
     const connection = await pool.getConnection();
     try {
       const [escala] = await connection.query(
-        "SELECT nome FROM Escalas WHERE id = ?",
+        "SELECT nome FROM escalas WHERE id = ?",
         [escalaId],
       );
       const nomeTabela = escala[0].nome;
@@ -147,7 +147,7 @@ export class EscalasRepository {
     const connection = await pool.getConnection();
     try {
       const [escala] = await connection.query(
-        "SELECT nome FROM Escalas WHERE id = ?",
+        "SELECT nome FROM escalas WHERE id = ?",
         [escalaId],
       );
       const nomeTabela = escala[0].nome;
@@ -161,7 +161,7 @@ export class EscalasRepository {
         SELECT 
           c.*,
           COALESCE(cont.quantidade, 0) as quantidade_escalas
-        FROM Coroinhas c
+        FROM coroinhas c
         INNER JOIN ${nomeTabela}_disponibilidades d ON c.id = d.coroinha_id
         LEFT JOIN ${nomeTabela}_contadores cont ON c.id = cont.coroinha_id
         WHERE 
@@ -201,7 +201,7 @@ export class EscalasRepository {
         `SELECT e.*, c.nome as coroinha_nome, p.nome as periodo_nome 
          FROM Escalas e 
          LEFT JOIN Coroinhas c ON e.coroinha_id = c.id
-         LEFT JOIN PeriodosEscala p ON e.periodo_id = p.id
+         LEFT JOIN periodos_escala p ON e.periodo_id = p.id
          ORDER BY e.data ASC, e.horario ASC`
       );
       return rows;
