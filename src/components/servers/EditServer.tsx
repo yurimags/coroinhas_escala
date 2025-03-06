@@ -17,6 +17,7 @@ interface EditServerProps {
     sub_acolito: boolean;
     disponibilidade_dias: string[];
     disponibilidade_locais: string[];
+    escala: number;
   };
 }
 
@@ -31,6 +32,7 @@ export function EditServer({ isOpen, onClose, onSave, coroinha }: EditServerProp
     sub_acolito: coroinha.sub_acolito,
     disponibilidade_dias: coroinha.disponibilidade_dias,
     disponibilidade_locais: coroinha.disponibilidade_locais,
+    escala: coroinha.escala || 0,
   });
   const { toast } = useToast();
 
@@ -162,6 +164,21 @@ export function EditServer({ isOpen, onClose, onSave, coroinha }: EditServerProp
                 </div>
               ))}
             </div>
+          </div>
+
+          <div className="grid gap-2">
+            <Label htmlFor="escala">Quantidade de Escalas</Label>
+            <Input
+              id="escala"
+              type="number"
+              min={0}
+              value={formData.escala}
+              onChange={(e) => setFormData(prev => ({ 
+                ...prev, 
+                escala: Number(e.target.value) 
+              }))}
+              className="w-full"
+            />
           </div>
         </div>
 

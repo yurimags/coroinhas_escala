@@ -26,4 +26,6 @@ router.get("/export", escalasController.exportarEscalas);
 // Rota de listagem geral (deve vir por último)
 router.get("/", escalasController.listarEscalas);
 
+router.get("/disponibilidade/:periodo_id/:data/:local", escalasController.listarCoroinhasDisponiveis);
+
 export default router;

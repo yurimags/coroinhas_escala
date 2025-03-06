@@ -9,11 +9,20 @@ import {
   TimePicker,
   message,
   Space,
-  Popconfirm
+  Popconfirm,
+  Radio,
+  Card,
+  Row,
+  Col,
+  Typography,
+  Tag
 } from 'antd';
-import { EditOutlined, DeleteOutlined, PlusOutlined, DownloadOutlined } from '@ant-design/icons';
+import { EditOutlined, DeleteOutlined, PlusOutlined, DownloadOutlined, TableOutlined, AppstoreOutlined, CalendarOutlined, EnvironmentOutlined, ClockCircleOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import 'dayjs/locale/pt-br';
+import { EscalasCards } from './schedule/EscalasCards';
+
+const { Title, Text } = Typography;
 
 dayjs.locale('pt-br');
 
@@ -23,6 +32,7 @@ const EscalasTable = () => {
   const [loading, setLoading] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
   const [editingEscala, setEditingEscala] = useState(null);
+  const [viewMode, setViewMode] = useState('table'); // 'table' ou 'cards'
   const [form] = Form.useForm();
 
   const locais = ['Paróquia', 'RainhaDaPaz', 'CristoRei', 'BomPastor'];
@@ -213,36 +223,166 @@ const EscalasTable = () => {
     }
   ];
 
+  const renderCards = () => {
+    // Agrupar escalas por data, local e horário
+    const grupos = {};
+    escalas.forEach(escala => {
+      const dataFormatada = escala.data.format('DD/MM/YYYY');
+      const diaSemana = escala.data.format('dddd');
+      const chave = `${dataFormatada}-${escala.local}-${escala.horario.format('HH:mm')}`;
+
+      if (!grupos[chave]) {
+        grupos[chave] = {
+          data: dataFormatada,
+          diaSemana: diaSemana.charAt(0).toUpperCase() + diaSemana.slice(1),
+          local: escala.local,
+          horario: escala.horario.format('HH:mm'),
+          coroinhas: []
+        };
+      }
+
+      grupos[chave].coroinhas.push({
+        nome: escala.coroinha_nome,
+        id: escala.id
+      });
+    });
+
+    return (
+      <Row gutter={[16, 16]} style={{ padding: '16px' }}>
+        {Object.values(grupos).map((grupo, index) => (
+          <Col xs={24} sm={12} lg={8} key={index}>
+            <Card
+              title={
+                <Space direction="vertical" size={0}>
+                  <Space>
+                    <CalendarOutlined />
+                    <Text strong>{grupo.data.split('/')[0]} - {grupo.diaSemana}</Text>
+                  </Space>
+                  <Space>
+                    <EnvironmentOutlined />
+                    <Text type="secondary">{grupo.local}</Text>
+                    <ClockCircleOutlined />
+                    <Text type="secondary">{grupo.horario}</Text>
+                  </Space>
+                </Space>
+              }
+              extra={
+                <Tag color="blue">{grupo.coroinhas.length} coroinha(s)</Tag>
+              }
+            >
+              <div style={{ maxHeight: '150px', overflowY: 'auto' }}>
+                {grupo.coroinhas.map((coroinha, idx) => (
+                  <div key={idx} style={{ 
+                    display: 'flex', 
+                    justifyContent: 'space-between', 
+                    alignItems: 'center',
+                    padding: '8px 0',
+                    borderBottom: idx < grupo.coroinhas.length - 1 ? '1px solid #f0f0f0' : 'none'
+                  }}>
+                    <Text>{coroinha.nome}</Text>
+                    <Space>
+                      <Button
+                        size="small"
+                        icon={<EditOutlined />}
+                        onClick={() => {
+                          const escala = escalas.find(e => e.id === coroinha.id);
+                          setEditingEscala(escala);
+                          form.setFieldsValue({
+                            ...escala,
+                            coroinha_id: escala.coroinha_id
+                          });
+                          setModalVisible(true);
+                        }}
+                      />
+                      <Popconfirm
+                        title="Tem certeza que deseja excluir esta escala?"
+                        onConfirm={async () => {
+                          try {
+                            const response = await fetch(`/api/escalas/${coroinha.id}`, {
+                              method: 'DELETE'
+                            });
+                            const data = await response.json();
+                            if (data.success) {
+                              message.success('Escala excluída com sucesso');
+                              fetchEscalas();
+                            }
+                          } catch (error) {
+                            message.error('Erro ao excluir escala');
+                          }
+                        }}
+                      >
+                        <Button size="small" icon={<DeleteOutlined />} danger />
+                      </Popconfirm>
+                    </Space>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          </Col>
+        ))}
+      </Row>
+    );
+  };
+
   return (
     <div>
-      <div style={{ marginBottom: 16 }}>
-        <Space>
-          <Button
-            type="primary"
-            icon={<PlusOutlined />}
-            onClick={() => {
-              setEditingEscala(null);
-              form.resetFields();
-              setModalVisible(true);
-            }}
-          >
-            Nova Escala
-          </Button>
-          <Button
-            icon={<DownloadOutlined />}
-            onClick={handleExport}
-          >
-            Exportar
-          </Button>
-        </Space>
+      <div style={{ marginBottom: 16, padding: '16px', background: '#fff', borderRadius: '8px', boxShadow: '0 1px 2px rgba(0,0,0,0.03)' }}>
+        <Row justify="space-between" align="middle">
+          <Col>
+            <Space>
+              <Button
+                type="primary"
+                icon={<PlusOutlined />}
+                onClick={() => {
+                  setEditingEscala(null);
+                  form.resetFields();
+                  setModalVisible(true);
+                }}
+              >
+                Nova Escala
+              </Button>
+              <Button
+                icon={<DownloadOutlined />}
+                onClick={handleExport}
+              >
+                Exportar
+              </Button>
+            </Space>
+          </Col>
+          <Col>
+            <Radio.Group
+              value={viewMode}
+              onChange={(e) => setViewMode(e.target.value)}
+              optionType="button"
+              buttonStyle="solid"
+            >
+              <Radio.Button value="table">
+                <Space>
+                  <TableOutlined />
+                  Tabela
+                </Space>
+              </Radio.Button>
+              <Radio.Button value="cards">
+                <Space>
+                  <AppstoreOutlined />
+                  Cards
+                </Space>
+              </Radio.Button>
+            </Radio.Group>
+          </Col>
+        </Row>
       </div>
 
-      <Table
-        columns={columns}
-        dataSource={escalas}
-        loading={loading}
-        rowKey="id"
-      />
+      {viewMode === 'table' ? (
+        <Table
+          columns={columns}
+          dataSource={escalas}
+          loading={loading}
+          rowKey="id"
+        />
+      ) : (
+        renderCards()
+      )}
 
       <Modal
         title={editingEscala ? 'Editar Escala' : 'Nova Escala'}

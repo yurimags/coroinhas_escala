@@ -19,7 +19,7 @@ export class CoroinhasRepository {
   async exportar() {
     const connection = await pool.getConnection();
     try {
-      const [coroinhas] = await connection.query(`
+      const [coroinhas] = await connection.query<any[]>(`
         SELECT 
           nome,
           acolito,
@@ -31,8 +31,7 @@ export class CoroinhasRepository {
         ORDER BY nome ASC
       `);
 
-      // Formatar os dados para o Excel
-      const dadosFormatados = coroinhas.map((c: any) => ({
+      const dadosFormatados = (coroinhas as any[]).map((c) => ({
         Nome: c.nome,
         Acólito: c.acolito ? 'Sim' : 'Não',
         'Sub-Acólito': c.sub_acolito ? 'Sim' : 'Não',
@@ -92,15 +91,23 @@ export class CoroinhasRepository {
         : undefined;
 
       const [result] = await connection.query(
-        "UPDATE Coroinhas SET nome = COALESCE(?, nome), acolito = COALESCE(?, acolito), sub_acolito = COALESCE(?, sub_acolito), disponibilidade_dias = COALESCE(?, disponibilidade_dias), disponibilidade_locais = COALESCE(?, disponibilidade_locais) WHERE id = ?",
+        `UPDATE Coroinhas SET 
+          nome = COALESCE(?, nome), 
+          acolito = COALESCE(?, acolito), 
+          sub_acolito = COALESCE(?, sub_acolito), 
+          disponibilidade_dias = COALESCE(?, disponibilidade_dias), 
+          disponibilidade_locais = COALESCE(?, disponibilidade_locais),
+          escala = COALESCE(?, escala)
+          WHERE id = ?`,
         [
           coroinha.nome,
           coroinha.acolito,
           coroinha.sub_acolito,
           diasJson,
           locaisJson,
+          coroinha.escala,
           id,
-        ],
+        ]
       );
 
       return result.affectedRows > 0;
@@ -135,6 +142,34 @@ export class CoroinhasRepository {
         "UPDATE Coroinhas SET escala = 0 WHERE id = ?",
         [id]
       );
+    } finally {
+      connection.release();
+    }
+  }
+
+  async resetarTodasEscalas() {
+    const connection = await pool.getConnection();
+    try {
+      await connection.query("UPDATE Coroinhas SET escala = 0");
+      return true;
+    } finally {
+      connection.release();
+    }
+  }
+
+  async atualizarEscala(id: number, escala: number) {
+    const connection = await pool.getConnection();
+    try {
+      const [result] = await connection.query(
+        "UPDATE Coroinhas SET escala = ? WHERE id = ?",
+        [escala, id]
+      );
+      
+      if (result.affectedRows === 0) {
+        throw new Error('Coroinha não encontrado');
+      }
+      
+      return true;
     } finally {
       connection.release();
     }

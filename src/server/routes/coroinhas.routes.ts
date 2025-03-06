@@ -18,5 +18,7 @@ router.post(
 );
 router.get("/export", coroinhasController.exportarCoroinhas);
 router.post("/:id/reset-escala", coroinhasController.resetarEscala);
+router.post("/reset-all-escalas", coroinhasController.resetarTodasEscalas);
+router.post("/:id/update-escala", coroinhasController.atualizarEscala);
 
 export default router;

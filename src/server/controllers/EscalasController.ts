@@ -84,6 +84,7 @@ export class EscalasController {
     this.listarEventosPeriodo = this.listarEventosPeriodo.bind(this);
     this.criarDisponibilidadePeriodo = this.criarDisponibilidadePeriodo.bind(this);
     this.listarDisponibilidadesPeriodo = this.listarDisponibilidadesPeriodo.bind(this);
+    this.listarCoroinhasDisponiveis = this.listarCoroinhasDisponiveis.bind(this);
   }
 
   async criarPeriodo(req: Request, res: Response) {
@@ -118,118 +119,99 @@ export class EscalasController {
 
   async gerarEscala(req: Request, res: Response) {
     try {
-      const { periodo_id, locais, dias, horarios, regras, eventos } = req.body;
-
-      if (!periodo_id) {
-        throw new Error("ID do período é obrigatório");
-      }
-
-      if (!Array.isArray(locais) || !Array.isArray(dias) || !Array.isArray(horarios)) {
-        throw new Error("locais, dias e horarios devem ser arrays");
-      }
-
+      const { periodo_id, eventos, regras } = req.body;
       const escalasGeradas = [];
       const alertas = [];
+      
+      // Ordenar eventos cronologicamente
+      const eventosOrdenados = [...eventos].sort((a, b) => 
+        new Date(a.data).getTime() - new Date(b.data).getTime()
+      );
 
-      // Para cada evento
-      for (const evento of eventos) {
-        // Buscar coroinhas disponíveis ordenados por menor número de serviços
-        const coroinhasDisponiveis = await this.periodosRepository.obterCoroinhasDisponiveis(
+      // Manter um mapa de contagem de escalas para controle local
+      const contadorEscalas = new Map<number, number>();
+
+      for (const evento of eventosOrdenados) {
+        const data = new Date(evento.data);
+        const diaSemana = getDiaSemana(data);
+        const ehFinalDeSemana = diaSemana === "Sábado" || diaSemana === "Domingo";
+        const ehComunidade = ["Rainha Da Paz", "Cristo Rei", "Bom Pastor"].includes(evento.local);
+        
+        // Buscar todos os coroinhas disponíveis para este evento
+        let coroinhasDisponiveis = await this.periodosRepository.obterCoroinhasDisponiveis(
           periodo_id,
-          new Date(evento.data),
+          data,
           evento.local,
-          getDiaSemana(new Date(evento.data))
+          diaSemana
         );
 
-        // Extrair locais, dias e horários únicos dos eventos
-        const locaisUnicos = [...new Set(eventos.map((e: EventoPeriodo) => e.local))];
-        const diasUnicos = [...new Set(eventos.map((e: EventoPeriodo) => getDiaSemana(new Date(e.data))))];
-        const horariosUnicos = [...new Set(eventos.map((e: EventoPeriodo) => e.horario))];
+        if (coroinhasDisponiveis.length === 0) {
+          alertas.push(`Nenhum coroinha disponível para ${evento.data} em ${evento.local}`);
+          continue;
+        }
 
-        console.log('Dados para geração:', {
-          periodo_id,
-          locais: locaisUnicos,
-          dias: diasUnicos,
-          horarios: horariosUnicos,
-          eventos
-        });
+        // Atualizar contagem local de escalas
+        coroinhasDisponiveis = coroinhasDisponiveis.map(c => ({
+          ...c,
+          escala_total: (contadorEscalas.get(c.id) || 0) + (c.escala || 0)
+        }));
 
-        // Filtrar coroinhas por tipo (acólito, sub-acólito, outros)
-        const acolitos = coroinhasDisponiveis.filter(c => c.acolito);
-        const subAcolitos = coroinhasDisponiveis.filter(c => c.sub_acolito && !c.acolito);
-        const outrosCoroinhas = coroinhasDisponiveis.filter(c => !c.acolito && !c.sub_acolito);
+        // Encontrar o menor número de escalas entre todos os coroinhas disponíveis
+        const menorEscala = Math.min(...coroinhasDisponiveis.map(c => c.escala_total));
 
-        // Determinar quais coroinhas usar baseado nas regras
+        // Filtrar coroinhas já escalados no mesmo dia
+        const coroinhasJaEscalados = escalasGeradas
+          .filter(e => new Date(e.data).toDateString() === data.toDateString())
+          .map(e => e.coroinha_id);
+
+        // Filtrar coroinhas disponíveis removendo os já escalados no dia
+        coroinhasDisponiveis = coroinhasDisponiveis.filter(c => !coroinhasJaEscalados.includes(c.id));
+
+        // Primeiro, selecionar apenas coroinhas com o menor número de escalas
+        let coroinhasCandidatos = coroinhasDisponiveis.filter(c => c.escala_total === menorEscala);
+        
+        // Se não houver candidatos suficientes com o menor número de escalas, incluir os próximos
+        if (coroinhasCandidatos.length < evento.numero_coroinhas) {
+          coroinhasCandidatos = coroinhasDisponiveis.sort((a, b) => a.escala_total - b.escala_total);
+        }
+
+        const numeroCoroinhasNecessario = evento.numero_coroinhas || (ehFinalDeSemana ? 4 : 3);
         let coroinhasSelecionados = [];
-        const minimoAcolitos = regras.minimoAcolitos || 1;
-        const numeroCoroinhasNecessario = evento.numero_coroinhas || 1;
 
-        if (acolitos.length >= minimoAcolitos) {
-          // Temos acólitos suficientes
-          coroinhasSelecionados = [
-            ...acolitos.slice(0, minimoAcolitos),
-            ...subAcolitos.slice(0, Math.max(0, numeroCoroinhasNecessario - minimoAcolitos))
-          ];
+        // Para finais de semana e comunidades, tentar incluir um acólito/sub-acólito
+        if (ehFinalDeSemana || ehComunidade) {
+          const acolitosDisponiveis = coroinhasCandidatos
+            .filter(c => c.acolito || c.sub_acolito)
+            .sort((a, b) => a.escala_total - b.escala_total);
 
-          if (coroinhasSelecionados.length < numeroCoroinhasNecessario) {
-            coroinhasSelecionados = [
-              ...coroinhasSelecionados,
-              ...outrosCoroinhas.slice(0, numeroCoroinhasNecessario - coroinhasSelecionados.length)
-            ];
+          if (acolitosDisponiveis.length > 0) {
+            coroinhasSelecionados.push(acolitosDisponiveis[0]);
+            coroinhasCandidatos = coroinhasCandidatos.filter(c => c.id !== acolitosDisponiveis[0].id);
           }
-        } else if (acolitos.length > 0) {
-          // Usar os acólitos disponíveis e completar com sub-acólitos
-          coroinhasSelecionados = [
-            ...acolitos,
-            ...subAcolitos.slice(0, numeroCoroinhasNecessario - acolitos.length)
-          ];
-
-          if (coroinhasSelecionados.length < numeroCoroinhasNecessario) {
-            coroinhasSelecionados = [
-              ...coroinhasSelecionados,
-              ...outrosCoroinhas.slice(0, numeroCoroinhasNecessario - coroinhasSelecionados.length)
-            ];
-          }
-
-          alertas.push(`Número insuficiente de acólitos para ${evento.data} ${evento.horario} em ${evento.local}. Usando sub-acólitos e coroinhas regulares para completar.`);
-        } else if (subAcolitos.length > 0) {
-          // Usar sub-acólitos e completar com outros coroinhas se necessário
-          coroinhasSelecionados = [
-            ...subAcolitos.slice(0, numeroCoroinhasNecessario)
-          ];
-
-          if (coroinhasSelecionados.length < numeroCoroinhasNecessario) {
-            coroinhasSelecionados = [
-              ...coroinhasSelecionados,
-              ...outrosCoroinhas.slice(0, numeroCoroinhasNecessario - coroinhasSelecionados.length)
-            ];
-          }
-
-          alertas.push(`Nenhum acólito disponível para ${evento.data} ${evento.horario} em ${evento.local}. Usando sub-acólitos e coroinhas regulares.`);
-        } else {
-          // Usar outros coroinhas
-          coroinhasSelecionados = outrosCoroinhas.slice(0, numeroCoroinhasNecessario);
-          alertas.push(`Nenhum acólito ou sub-acólito disponível para ${evento.data} ${evento.horario} em ${evento.local}. Usando coroinhas regulares.`);
         }
 
-        if (coroinhasSelecionados.length < numeroCoroinhasNecessario) {
-          alertas.push(`Atenção: Não há coroinhas suficientes para ${evento.data} ${evento.horario} em ${evento.local}. Necessário: ${numeroCoroinhasNecessario}, Disponível: ${coroinhasSelecionados.length}`);
+        // Completar com os demais coroinhas
+        while (coroinhasSelecionados.length < numeroCoroinhasNecessario && coroinhasCandidatos.length > 0) {
+          const proximo = coroinhasCandidatos.shift()!;
+          coroinhasSelecionados.push(proximo);
         }
 
-        // Criar escala para cada coroinha selecionado
+        // Registrar as escalas
         for (const coroinha of coroinhasSelecionados) {
-          // Registrar o serviço no histórico
           await this.periodosRepository.registrarServico(
             coroinha.id,
             periodo_id,
-            new Date(evento.data),
+            data,
             evento.horario,
             evento.local
           );
 
-          // Criar a escala
+          // Atualizar contador local e incrementar escala
+          contadorEscalas.set(coroinha.id, (contadorEscalas.get(coroinha.id) || 0) + 1);
+          await this.repository.incrementarEscala(coroinha.id);
+
           const escala = await this.repository.criar({
-            data: new Date(evento.data),
+            data: data,
             horario: evento.horario,
             local: evento.local,
             coroinha_id: coroinha.id,
@@ -409,6 +391,23 @@ export class EscalasController {
     } catch (error) {
       res.status(500).json({
         error: "Erro ao listar disponibilidades do período",
+        details: error instanceof Error ? error.message : "Erro desconhecido"
+      });
+    }
+  }
+
+  async listarCoroinhasDisponiveis(req: Request, res: Response) {
+    try {
+      const { periodo_id, data, local } = req.params;
+      const coroinhas = await this.repository.listarCoroinhasDisponiveis(
+        parseInt(periodo_id),
+        new Date(data),
+        local
+      );
+      res.json(coroinhas);
+    } catch (error) {
+      res.status(500).json({
+        error: "Erro ao listar coroinhas disponíveis",
         details: error instanceof Error ? error.message : "Erro desconhecido"
       });
     }

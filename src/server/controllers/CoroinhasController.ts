@@ -15,6 +15,8 @@ export class CoroinhasController {
     this.importarCoroinhas = this.importarCoroinhas.bind(this);
     this.exportarCoroinhas = this.exportarCoroinhas.bind(this);
     this.resetarEscala = this.resetarEscala.bind(this);
+    this.resetarTodasEscalas = this.resetarTodasEscalas.bind(this);
+    this.atualizarEscala = this.atualizarEscala.bind(this);
   }
 
   async listarCoroinhas(req: Request, res: Response) {
@@ -130,6 +132,48 @@ export class CoroinhasController {
       console.error('Erro ao resetar escala:', error);
       res.status(500).json({ 
         error: 'Erro ao resetar escala',
+        details: error instanceof Error ? error.message : "Erro desconhecido"
+      });
+    }
+  }
+
+  async resetarTodasEscalas(req: Request, res: Response) {
+    try {
+      await this.repository.resetarTodasEscalas();
+      res.json({ 
+        success: true,
+        message: "Todas as escalas foram zeradas com sucesso"
+      });
+    } catch (error) {
+      console.error('Erro ao resetar todas as escalas:', error);
+      res.status(500).json({ 
+        error: 'Erro ao resetar todas as escalas',
+        details: error instanceof Error ? error.message : "Erro desconhecido"
+      });
+    }
+  }
+
+  async atualizarEscala(req: Request, res: Response) {
+    try {
+      const { id } = req.params;
+      const { escala } = req.body;
+
+      if (typeof escala !== 'number' || escala < 0) {
+        return res.status(400).json({
+          error: 'Valor de escala inválido',
+          details: 'O valor da escala deve ser um número não negativo'
+        });
+      }
+
+      await this.repository.atualizarEscala(parseInt(id), escala);
+      res.json({
+        success: true,
+        message: "Escala atualizada com sucesso"
+      });
+    } catch (error) {
+      console.error('Erro ao atualizar escala:', error);
+      res.status(500).json({ 
+        error: 'Erro ao atualizar escala',
         details: error instanceof Error ? error.message : "Erro desconhecido"
       });
     }

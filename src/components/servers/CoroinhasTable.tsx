@@ -8,7 +8,7 @@ import {
   type SortingState,
   type VisibilityState,
 } from '@tanstack/react-table';
-import { ArrowUpDown, Edit2, Trash2, Plus, Upload, Download, Settings2 } from 'lucide-react';
+import { ArrowUpDown, Edit2, Trash2, Plus, Upload, Download, Settings2, Rotate3D } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import { ServerManagement } from './ServerManagement';
 import { useToast } from "@/components/ui/use-toast";
@@ -80,6 +80,7 @@ export function CoroinhasTable({ coroinhas, onUpdate }: CoroinhasTableProps) {
     sub_acolito: true,
     disponibilidade_dias: true,
     disponibilidade_locais: true,
+    escala: true,
     actions: true,
   });
 
@@ -90,6 +91,7 @@ export function CoroinhasTable({ coroinhas, onUpdate }: CoroinhasTableProps) {
     sub_acolito: 'SUB-ACÓLITO',
     disponibilidade_dias: 'DIAS DISPONÍVEIS',
     disponibilidade_locais: 'LOCAIS DISPONÍVEIS',
+    escala: 'ESCALA',
     actions: 'AÇÕES'
   };
 
@@ -163,6 +165,17 @@ export function CoroinhasTable({ coroinhas, onUpdate }: CoroinhasTableProps) {
           );
         },
       }),
+      columnHelper.accessor('escala', {
+        header: 'ESCALA',
+        cell: (info) => {
+          const escala = info.getValue();
+          return (
+            <div className="flex items-center space-x-2">
+              <span>{escala}</span>
+            </div>
+          );
+        },
+      }),
       columnHelper.display({
         id: 'actions',
         header: 'AÇÕES',
@@ -175,6 +188,15 @@ export function CoroinhasTable({ coroinhas, onUpdate }: CoroinhasTableProps) {
               className="p-2 hover:bg-blue-50"
             >
               <Edit2 className="h-4 w-4 text-blue-600" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => handleResetIndividual(info.row.original.id)}
+              className="p-2 hover:bg-yellow-50"
+              title="Zerar escala"
+            >
+              <Rotate3D className="h-4 w-4 text-yellow-600" />
             </Button>
             <Button
               variant="ghost"
@@ -207,6 +229,11 @@ export function CoroinhasTable({ coroinhas, onUpdate }: CoroinhasTableProps) {
     onColumnVisibilityChange: setColumnVisibility,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
+    meta: {
+      updateData: (rowIndex: number, columnId: any) => {
+        // Atualiza os dados localmente se necessário
+      },
+    },
   });
 
   const handleImportXLSX = () => {
@@ -389,6 +416,56 @@ export function CoroinhasTable({ coroinhas, onUpdate }: CoroinhasTableProps) {
     }
   };
 
+  const handleResetAll = async () => {
+    if (confirm('Tem certeza que deseja zerar todas as escalas?')) {
+      try {
+        const response = await fetch('/api/coroinhas/reset-all-escalas', {
+          method: 'POST',
+        });
+
+        if (response.ok) {
+          toast({
+            title: "Sucesso",
+            description: "Todas as escalas foram zeradas com sucesso",
+          });
+          onUpdate();
+        } else {
+          throw new Error('Erro ao zerar escalas');
+        }
+      } catch (error) {
+        toast({
+          title: "Erro",
+          description: "Erro ao zerar todas as escalas",
+          variant: "destructive",
+        });
+      }
+    }
+  };
+
+  const handleResetIndividual = async (id: number) => {
+    try {
+      const response = await fetch(`/api/coroinhas/${id}/reset-escala`, {
+        method: 'POST',
+      });
+
+      if (response.ok) {
+        toast({
+          title: "Sucesso",
+          description: "Escala zerada com sucesso",
+        });
+        onUpdate();
+      } else {
+        throw new Error('Erro ao zerar escala');
+      }
+    } catch (error) {
+      toast({
+        title: "Erro",
+        description: "Erro ao zerar escala",
+        variant: "destructive",
+      });
+    }
+  };
+
   return (
     <div className="container mx-auto p-4">
       <div className="flex justify-between items-center mb-6">
@@ -405,6 +482,14 @@ export function CoroinhasTable({ coroinhas, onUpdate }: CoroinhasTableProps) {
               if (columnKey) handleColumnVisibilityChange(columnKey);
             }}
           />
+          <Button
+            onClick={handleResetAll}
+            className="flex items-center gap-2 bg-yellow-600 text-white hover:bg-yellow-700"
+            variant="default"
+          >
+            <Rotate3D className="h-4 w-4" />
+            Zerar Todas Escalas
+          </Button>
           <Button
             onClick={handleDeleteAll}
             className="flex items-center gap-2 bg-red-600 text-white hover:bg-red-700"

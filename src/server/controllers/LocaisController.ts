@@ -10,6 +10,7 @@ export class LocaisController {
     this.listarLocais = this.listarLocais.bind(this);
     this.listarLocaisDisponiveis = this.listarLocaisDisponiveis.bind(this);
     this.listarOpcoesLocais = this.listarOpcoesLocais.bind(this);
+    this.listar = this.listar.bind(this);
   }
 
   async listarLocais(req: Request, res: Response) {
@@ -44,6 +45,18 @@ export class LocaisController {
       res.status(500).json({
         error: "Erro ao listar opções de locais",
         details: error instanceof Error ? error.message : "Erro desconhecido",
+      });
+    }
+  }
+
+  async listar(_req: Request, res: Response) {
+    try {
+      const locais = await this.repository.listar();
+      res.json(locais);
+    } catch (error) {
+      res.status(500).json({
+        error: "Erro ao listar locais",
+        details: error instanceof Error ? error.message : "Erro desconhecido"
       });
     }
   }

@@ -134,13 +134,14 @@ interface ServerManagementProps {
 export function ServerManagement({ mode, coroinha, onClose, onUpdate }: ServerManagementProps) {
   const { toast } = useToast();
   
-  // Inicializa o formData com os dados do coroinha se estiver em modo de edição
+  // Atualizar o formData para incluir o campo escala
   const [formData, setFormData] = useState({
     nome: mode === 'edit' ? coroinha?.nome || '' : '',
     acolito: mode === 'edit' ? coroinha?.acolito || false : false,
     sub_acolito: mode === 'edit' ? coroinha?.sub_acolito || false : false,
     disponibilidade_dias: mode === 'edit' ? coroinha?.disponibilidade_dias || [] : [],
     disponibilidade_locais: mode === 'edit' ? coroinha?.disponibilidade_locais || [] : [],
+    escala: mode === 'edit' ? coroinha?.escala || 0 : 0, // Adicionar campo escala
   });
 
   // Mova as opções para um arquivo de configuração ou busque da API
@@ -180,6 +181,7 @@ export function ServerManagement({ mode, coroinha, onClose, onUpdate }: ServerMa
         sub_acolito: coroinha.sub_acolito,
         disponibilidade_dias: coroinha.disponibilidade_dias,
         disponibilidade_locais: coroinha.disponibilidade_locais,
+        escala: coroinha.escala,
       });
     }
   }, [mode, coroinha]);
@@ -357,6 +359,23 @@ export function ServerManagement({ mode, coroinha, onClose, onUpdate }: ServerMa
                     </div>
                   ))}
                 </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="escala" className="text-sm font-medium">
+                  Quantidade de Escalas
+                </Label>
+                <Input
+                  id="escala"
+                  type="number"
+                  min="0"
+                  value={formData.escala}
+                  onChange={(e) => setFormData(prev => ({
+                    ...prev,
+                    escala: parseInt(e.target.value) || 0
+                  }))}
+                  className="w-full"
+                />
               </div>
             </div>
 

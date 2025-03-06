@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -6,8 +6,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -15,8 +15,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Calendar } from "@/components/ui/calendar";
-import { format } from "date-fns";
+import { DatePicker } from "@/components/ui/date-picker";
 
 interface EditScheduleDialogProps {
   schedule: any;
@@ -31,22 +30,54 @@ export function EditScheduleDialog({
   locais,
   coroinhas,
   onSave,
-  onClose,
+  onClose
 }: EditScheduleDialogProps) {
-  const [local, setLocal] = useState(schedule.local);
-  const [coroinhaId, setCoroinhaId] = useState(schedule.coroinhas[0]?.id || '');
-  const [data, setData] = useState(new Date(schedule.data));
-  const [horario, setHorario] = useState(schedule.horario);
+  const [formData, setFormData] = useState({
+    id: schedule?.id,
+    data: schedule?.data ? new Date(schedule.data) : new Date(),
+    horario: schedule?.horario || '',
+    local: schedule?.local || '',
+    coroinha_id: schedule?.coroinhas?.[0]?.id?.toString() || '',
+    periodo_id: schedule?.periodo_id,
+    status: schedule?.status || 'agendado',
+    escala: schedule?.coroinhas?.[0]?.escala || 0
+  });
 
-  const handleSubmit = () => {
-    const updatedSchedule = {
-      ...schedule,
-      local,
-      coroinha_id: coroinhaId,
-      data: data.toISOString(),
-      horario,
-    };
-    onSave(updatedSchedule);
+  // Atualizar a escala quando o coroinha é alterado
+  useEffect(() => {
+    if (formData.coroinha_id) {
+      const selectedCoroinha = coroinhas.find(c => c.id.toString() === formData.coroinha_id);
+      if (selectedCoroinha) {
+        setFormData(prev => ({
+          ...prev,
+          escala: selectedCoroinha.escala || 0
+        }));
+      }
+    }
+  }, [formData.coroinha_id, coroinhas]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    try {
+      // Primeiro, atualizar a escala do coroinha
+      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+      await fetch(`${apiUrl}/api/coroinhas/${formData.coroinha_id}/update-escala`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ escala: formData.escala }),
+      });
+
+      // Depois, atualizar a escala
+      onSave({
+        ...formData,
+        coroinha_id: parseInt(formData.coroinha_id)
+      });
+    } catch (error) {
+      console.error('Erro ao atualizar escala:', error);
+    }
   };
 
   return (
@@ -55,14 +86,31 @@ export function EditScheduleDialog({
         <DialogHeader>
           <DialogTitle>Editar Escala</DialogTitle>
         </DialogHeader>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="space-y-2">
+            <Label>Data</Label>
+            <DatePicker
+              selected={formData.data}
+              onChange={(date) => setFormData({ ...formData, data: date || new Date() })}
+            />
+          </div>
 
-        <div className="grid gap-4 py-4">
-          <div className="grid grid-cols-4 items-center gap-4">
-            <Label htmlFor="local" className="text-right">
-              Local
-            </Label>
-            <Select value={local} onValueChange={setLocal}>
-              <SelectTrigger className="col-span-3">
+          <div className="space-y-2">
+            <Label>Horário</Label>
+            <Input
+              type="time"
+              value={formData.horario}
+              onChange={(e) => setFormData({ ...formData, horario: e.target.value })}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label>Local</Label>
+            <Select
+              value={formData.local}
+              onValueChange={(value) => setFormData({ ...formData, local: value })}
+            >
+              <SelectTrigger>
                 <SelectValue placeholder="Selecione o local" />
               </SelectTrigger>
               <SelectContent>
@@ -75,17 +123,18 @@ export function EditScheduleDialog({
             </Select>
           </div>
 
-          <div className="grid grid-cols-4 items-center gap-4">
-            <Label htmlFor="coroinha" className="text-right">
-              Coroinha
-            </Label>
-            <Select value={coroinhaId} onValueChange={setCoroinhaId}>
-              <SelectTrigger className="col-span-3">
+          <div className="space-y-2">
+            <Label>Coroinha</Label>
+            <Select
+              value={formData.coroinha_id}
+              onValueChange={(value) => setFormData({ ...formData, coroinha_id: value })}
+            >
+              <SelectTrigger>
                 <SelectValue placeholder="Selecione o coroinha" />
               </SelectTrigger>
               <SelectContent>
                 {coroinhas.map((coroinha) => (
-                  <SelectItem key={coroinha.id} value={coroinha.id}>
+                  <SelectItem key={coroinha.id} value={coroinha.id.toString()}>
                     {coroinha.nome}
                   </SelectItem>
                 ))}
@@ -93,38 +142,23 @@ export function EditScheduleDialog({
             </Select>
           </div>
 
-          <div className="grid grid-cols-4 items-center gap-4">
-            <Label htmlFor="data" className="text-right">
-              Data
-            </Label>
-            <Calendar
-              mode="single"
-              selected={data}
-              onSelect={(date) => date && setData(date)}
-              className="col-span-3 rounded-md border"
-            />
-          </div>
-
-          <div className="grid grid-cols-4 items-center gap-4">
-            <Label htmlFor="horario" className="text-right">
-              Horário
-            </Label>
+          <div className="space-y-2">
+            <Label>Quantidade de Escalas</Label>
             <Input
-              id="horario"
-              type="time"
-              value={horario}
-              onChange={(e) => setHorario(e.target.value)}
-              className="col-span-3"
+              type="number"
+              min="0"
+              value={formData.escala}
+              onChange={(e) => setFormData({ ...formData, escala: parseInt(e.target.value) || 0 })}
             />
           </div>
-        </div>
 
-        <div className="flex justify-end gap-2">
-          <Button variant="outline" onClick={onClose}>
-            Cancelar
-          </Button>
-          <Button onClick={handleSubmit}>Salvar</Button>
-        </div>
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="outline" onClick={onClose}>
+              Cancelar
+            </Button>
+            <Button type="submit">Salvar</Button>
+          </div>
+        </form>
       </DialogContent>
     </Dialog>
   );

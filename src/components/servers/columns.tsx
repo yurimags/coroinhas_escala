@@ -1,5 +1,5 @@
 import { ColumnDef } from "@tanstack/react-table"
-import { MoreHorizontal, ArrowUpDown } from "lucide-react"
+import { MoreHorizontal, ArrowUpDown, Rotate3D } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
@@ -11,6 +11,9 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { Checkbox } from "@/components/ui/checkbox"
 import { ServerManagement } from "./ServerManagement"
+import { Input } from "@/components/ui/input"
+import { useState } from "react"
+import { useToast } from "@/components/ui/use-toast"
 
 export type Coroinha = {
   id: number
@@ -88,6 +91,106 @@ export const columns: ColumnDef<Coroinha>[] = [
     cell: ({ row }) => {
       const locais = row.getValue("disponibilidade_locais") as string[]
       return <div className="max-w-[200px] truncate" title={locais.join(", ")}>{locais.join(", ")}</div>
+    },
+  },
+  {
+    accessorKey: "escala",
+    header: ({ table }) => {
+      return (
+        <div className="flex items-center gap-2">
+          <Button
+            variant="ghost"
+            onClick={() => table.getColumn("escala")?.toggleSorting(table.getColumn("escala")?.getIsSorted() === "asc")}
+            className="flex items-center"
+          >
+            Escala
+            <ArrowUpDown className="ml-2 h-4 w-4" />
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={async () => {
+              if (confirm("Deseja realmente zerar a escala de todos os coroinhas?")) {
+                try {
+                  const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+                  await fetch(`${apiUrl}/api/coroinhas/reset-all-escalas`, {
+                    method: 'POST',
+                  });
+                  window.location.reload();
+                } catch (error) {
+                  console.error('Erro ao zerar escalas:', error);
+                }
+              }
+            }}
+            className="flex items-center p-2 hover:bg-destructive hover:text-destructive-foreground"
+            title="Zerar todas as escalas"
+          >
+            <Rotate3D className="h-4 w-4" />
+          </Button>
+        </div>
+      )
+    },
+    cell: ({ row }) => {
+      const [value, setValue] = useState(row.getValue("escala") || 0);
+      const [isEditing, setIsEditing] = useState(false);
+
+      return (
+        <div className="flex items-center gap-2">
+          {isEditing ? (
+            <Input
+              type="number"
+              value={value}
+              onChange={(e) => setValue(Number(e.target.value))}
+              onBlur={async () => {
+                try {
+                  const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+                  await fetch(`${apiUrl}/api/coroinhas/${row.original.id}/update-escala`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ escala: value }),
+                  });
+                  setIsEditing(false);
+                } catch (error) {
+                  console.error('Erro ao atualizar escala:', error);
+                }
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.currentTarget.blur();
+                }
+              }}
+              className="w-16 h-8 text-center"
+              min={0}
+            />
+          ) : (
+            <div
+              onClick={() => setIsEditing(true)}
+              className="w-16 h-8 flex items-center justify-center cursor-pointer rounded hover:bg-accent hover:text-accent-foreground"
+            >
+              {value}
+            </div>
+          )}
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={async () => {
+              try {
+                const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+                await fetch(`${apiUrl}/api/coroinhas/${row.original.id}/reset-escala`, {
+                  method: 'POST',
+                });
+                setValue(0);
+              } catch (error) {
+                console.error('Erro ao zerar escala:', error);
+              }
+            }}
+            className="flex items-center p-2 hover:bg-destructive hover:text-destructive-foreground"
+            title="Zerar escala"
+          >
+            <Rotate3D className="h-4 w-4" />
+          </Button>
+        </div>
+      );
     },
   },
   {

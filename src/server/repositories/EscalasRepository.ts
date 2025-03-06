@@ -24,6 +24,7 @@ interface GerarEscalaParams {
     limiteDiario: number;
   };
   numeroCoroinhas: number;
+  periodo_id: number;
 }
 
 export class EscalasRepository {
@@ -90,11 +91,11 @@ export class EscalasRepository {
   ) {
     const connection = await pool.getConnection();
     try {
-      const [escala] = await connection.query(
+      const [rows] = await connection.query<RowDataPacket[]>(
         "SELECT nome FROM escalas WHERE id = ?",
-        [escalaId],
+        [escalaId]
       );
-      const nomeTabela = `${escala[0].nome}_disponibilidades`;
+      const nomeTabela = `${rows[0].nome}_disponibilidades`;
 
       for (const disp of disponibilidades) {
         await connection.query(
@@ -233,54 +234,79 @@ export class EscalasRepository {
       await connection.beginTransaction();
       const escalasGeradas = [];
 
+      // Ordenar eventos cronologicamente
+      const eventos = [];
       for (const local of params.locais) {
         for (const dia of params.dias) {
           const data = this.getNextDateForDay(dia);
-
           for (const horario of params.horarios) {
-            // Buscar coroinhas disponíveis
-            const [coroinhas] = await connection.query(
-              `SELECT c.*, 
-                (SELECT COUNT(*) FROM Escalas e 
-                 WHERE e.coroinha_id = c.id 
-                 AND DATE(e.data) = ?) as escalas_hoje
-               FROM Coroinhas c
-               WHERE JSON_CONTAINS(c.disponibilidade_locais, ?) 
-               AND JSON_CONTAINS(c.disponibilidade_dias, ?)
-               HAVING escalas_hoje < ?
-               ORDER BY 
-                 ${params.regras.prioridadeAcolitos ? 'c.acolito DESC, c.sub_acolito DESC,' : ''}
-                 c.escala ASC
-               LIMIT ?`,
-              [
-                data.toISOString().split('T')[0],
-                JSON.stringify(local),
-                JSON.stringify(dia),
-                params.regras.limiteDiario,
-                params.numeroCoroinhas
-              ]
-            );
-
-            for (const coroinha of coroinhas) {
-              const [result] = await connection.query(
-                'INSERT INTO Escalas (data, horario, local, coroinha_id) VALUES (?, ?, ?, ?)',
-                [data, horario, local, coroinha.id]
-              );
-
-              await connection.query(
-                'UPDATE Coroinhas SET escala = escala + 1 WHERE id = ?',
-                [coroinha.id]
-              );
-
-              escalasGeradas.push({
-                id: result.insertId,
-                data,
-                horario,
-                local,
-                coroinha_id: coroinha.id
-              });
-            }
+            eventos.push({ data, horario, local });
           }
+        }
+      }
+      eventos.sort((a, b) => a.data.getTime() - b.data.getTime());
+
+      // Para cada evento, buscar coroinhas elegíveis
+      for (const evento of eventos) {
+        // Primeiro, obter a menor quantidade de escalas entre coroinhas disponíveis
+        const [minEscalas] = await connection.query<RowDataPacket[]>(
+          `SELECT MIN(c.escala) as min_escala
+           FROM Coroinhas c
+           WHERE JSON_CONTAINS(c.disponibilidade_locais, ?) 
+           AND JSON_CONTAINS(c.disponibilidade_dias, ?)`,
+          [
+            JSON.stringify(evento.local),
+            JSON.stringify(this.getDiaSemana(evento.data))
+          ]
+        );
+
+        const minEscala = minEscalas[0].min_escala || 0;
+
+        // Buscar coroinhas com prioridade para quem tem menos escalas
+        const [coroinhas] = await connection.query<RowDataPacket[]>(
+          `SELECT c.*, 
+            (SELECT COUNT(*) FROM Escalas e 
+             WHERE e.coroinha_id = c.id 
+             AND DATE(e.data) = ?) as escalas_hoje
+           FROM Coroinhas c
+           WHERE JSON_CONTAINS(c.disponibilidade_locais, ?) 
+           AND JSON_CONTAINS(c.disponibilidade_dias, ?)
+           AND c.escala <= ?
+           HAVING escalas_hoje < ?
+           ORDER BY 
+             c.escala ASC,
+             RAND()
+           LIMIT ?`,
+          [
+            evento.data.toISOString().split('T')[0],
+            JSON.stringify(evento.local),
+            JSON.stringify(this.getDiaSemana(evento.data)),
+            minEscala + 1,
+            params.regras.limiteDiario,
+            params.numeroCoroinhas
+          ]
+        );
+
+        // Selecionar coroinhas para este evento
+        for (const coroinha of coroinhas) {
+          const [result] = await connection.query(
+            'INSERT INTO Escalas (data, horario, local, coroinha_id, periodo_id) VALUES (?, ?, ?, ?, ?)',
+            [evento.data, evento.horario, evento.local, coroinha.id, params.periodo_id]
+          );
+
+          await connection.query(
+            'UPDATE Coroinhas SET escala = escala + 1 WHERE id = ?',
+            [coroinha.id]
+          );
+
+          escalasGeradas.push({
+            id: result.insertId,
+            data: evento.data,
+            horario: evento.horario,
+            local: evento.local,
+            coroinha_id: coroinha.id,
+            periodo_id: params.periodo_id
+          });
         }
       }
 
@@ -299,13 +325,35 @@ export class EscalasRepository {
     }
   }
 
-  async atualizar(id: number, escala: Partial<Escala>): Promise<void> {
+  async atualizar(id: number, escala: EscalaUpdate): Promise<boolean> {
     const connection = await pool.getConnection();
     try {
+      await connection.beginTransaction();
+
+      // Atualizar a escala
       await connection.query(
-        'UPDATE Escalas SET ? WHERE id = ?',
-        [escala, id]
+        `UPDATE Escalas SET 
+          data = COALESCE(?, data),
+          horario = COALESCE(?, horario),
+          local = COALESCE(?, local),
+          coroinha_id = COALESCE(?, coroinha_id)
+        WHERE id = ?`,
+        [escala.data, escala.horario, escala.local, escala.coroinha_id, id]
       );
+
+      // Se houver mudança no coroinha_id e na escala, atualizar a tabela de Coroinhas
+      if (escala.coroinha_id && escala.escala !== undefined) {
+        await connection.query(
+          'UPDATE Coroinhas SET escala = ? WHERE id = ?',
+          [escala.escala, escala.coroinha_id]
+        );
+      }
+
+      await connection.commit();
+      return true;
+    } catch (error) {
+      await connection.rollback();
+      throw error;
     } finally {
       connection.release();
     }
@@ -366,5 +414,47 @@ export class EscalasRepository {
     const date = new Date();
     date.setDate(date.getDate() + ((dias[dia] - date.getDay() + 7) % 7));
     return date;
+  }
+
+  async incrementarEscala(coroinhaId: number): Promise<void> {
+    const connection = await pool.getConnection();
+    try {
+      await connection.query(
+        'UPDATE Coroinhas SET escala = escala + 1 WHERE id = ?',
+        [coroinhaId]
+      );
+    } finally {
+      connection.release();
+    }
+  }
+
+  async listarCoroinhasDisponiveis(periodo_id: number, data: Date, local: string) {
+    const connection = await pool.getConnection();
+    try {
+      const diaSemana = this.getDiaSemana(data);
+      
+      // Buscar coroinhas considerando disponibilidade personalizada do período primeiro
+      const [coroinhas] = await connection.query<RowDataPacket[]>(
+        `SELECT 
+          c.id,
+          c.nome,
+          c.escala,
+          c.acolito,
+          c.sub_acolito,
+          COALESCE(dp.disponibilidade_dias, c.disponibilidade_dias) as disponibilidade_dias,
+          COALESCE(dp.disponibilidade_locais, c.disponibilidade_locais) as disponibilidade_locais
+         FROM Coroinhas c
+         LEFT JOIN disponibilidades_periodo dp ON c.id = dp.coroinha_id AND dp.periodo_id = ?
+         WHERE 
+           (JSON_CONTAINS(COALESCE(dp.disponibilidade_dias, c.disponibilidade_dias), ?) 
+           AND JSON_CONTAINS(COALESCE(dp.disponibilidade_locais, c.disponibilidade_locais), ?))
+         ORDER BY c.escala ASC`,
+        [periodo_id, JSON.stringify(diaSemana), JSON.stringify(local)]
+      );
+
+      return coroinhas;
+    } finally {
+      connection.release();
+    }
   }
 }

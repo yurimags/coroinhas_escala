@@ -5,7 +5,7 @@ const router = Router();
 const locaisController = new LocaisController();
 
 // List all locations
-router.get("/", locaisController.listarLocais);
+router.get("/", locaisController.listar);
 
 // List available locations
 router.get("/disponiveis", locaisController.listarLocaisDisponiveis);

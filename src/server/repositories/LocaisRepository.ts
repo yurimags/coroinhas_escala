@@ -1,6 +1,21 @@
 import { pool } from "../config/database.js";
 
 export class LocaisRepository {
+  async listar(): Promise<string[]> {
+    const connection = await pool.getConnection();
+    try {
+      // Retorna a lista fixa de locais disponíveis
+      return [
+        "Paróquia",
+        "Rainha Da Paz",
+        "Cristo Rei",
+        "Bom Pastor"
+      ];
+    } finally {
+      connection.release();
+    }
+  }
+
   async listarLocais() {
     const connection = await pool.getConnection();
     try {
